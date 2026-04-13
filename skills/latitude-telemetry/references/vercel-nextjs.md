@@ -45,4 +45,4 @@ Install `@latitude-data/telemetry` in the workspace package that executes LLM ca
 
 ## Vercel AI SDK and other frameworks
 
-If the stack uses the Vercel AI SDK or wrappers, ensure the **underlying vendor client** matches a supported `instrumentations[...]` entry from the Latitude README. If spans are missing, verify the instrumentation identifier list and import order against upstream docs.
+If the stack uses the Vercel AI SDK or wrappers, ensure the **underlying vendor client** matches a supported `instrumentations` entry from the Latitude README. If spans are missing, verify import order and, on TypeScript, pass the **same** vendor module via `modules` on `registerLatitudeInstrumentations` when Next’s bundler does not align with auto-`require` (see [typescript.md](typescript.md)).

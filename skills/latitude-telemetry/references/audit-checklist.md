@@ -11,7 +11,8 @@ Use when reviewing an existing integration or a pull request that touches observ
 
 - [ ] `LATITUDE_API_KEY` and `LATITUDE_PROJECT_SLUG` are read from the environment on the server, not hard-coded.
 - [ ] LLM client imports occur **after** telemetry bootstrap when patch-based auto-instrumentation requires it.
-- [ ] `instrumentations` array includes every vendor SDK actually used (OpenAI, Anthropic, and so on).
+- [ ] **TypeScript**: `instrumentations` includes every vendor SDK actually used; if spans are missing despite installs, verify explicit **`modules`** (imported client classes) on `registerLatitudeInstrumentations` per [typescript.md](typescript.md).
+- [ ] **Python**: `instrumentations` list includes every vendor SDK actually used (OpenAI, Anthropic, and so on).
 - [ ] Short-lived processes call `flush()` / `shutdown()` (or provider `forceFlush()`).
 
 ## Context and privacy
