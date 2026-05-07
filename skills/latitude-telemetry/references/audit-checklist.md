@@ -13,6 +13,8 @@ Use when reviewing an existing integration or a pull request that touches observ
 - [ ] LLM client imports occur **after** telemetry bootstrap when patch-based auto-instrumentation requires it.
 - [ ] **TypeScript**: `instrumentations` includes every vendor SDK actually used; if spans are missing despite installs, verify explicit **`modules`** (imported client classes) on `registerLatitudeInstrumentations` per [typescript.md](typescript.md).
 - [ ] **Python**: `instrumentations` list includes every vendor SDK actually used (OpenAI, Anthropic, and so on).
+- [ ] **Vercel AI SDK** code is NOT also registered via `instrumentations: ["openai"]`; it uses `experimental_telemetry: { isEnabled: true }` per call instead.
+- [ ] **Python return value** uses item access: `latitude["flush"]()` / `latitude["shutdown"]()`, not attribute access.
 - [ ] Short-lived processes call `flush()` / `shutdown()` (or provider `forceFlush()`).
 
 ## Context and privacy
@@ -21,11 +23,11 @@ Use when reviewing an existing integration or a pull request that touches observ
 - [ ] Tags and metadata avoid secrets (tokens, raw prompts if policy forbids).
 - [ ] Redaction defaults are understood; custom `redact` / `disable_redact` choices are intentional.
 
-## Platform (Vercel / Next.js)
+## Process lifecycle
 
-- [ ] LLM code runs on **Node.js** runtime, not Edge, unless explicitly validated.
-- [ ] Initialization happens once per process via `instrumentation.ts` or a shared server module.
-- [ ] Serverless handlers that must not lose spans await `flush()` where appropriate.
+- [ ] Initialization runs **once per process** at startup, before LLM clients are constructed.
+- [ ] Short-lived processes (CLI, scripts, jobs) call `flush()` / `shutdown()` before exit.
+- [ ] Serverless handlers (Lambda, Cloud Run, etc.) `flush()` after LLM work, before returning or suspending.
 
 ## Observability of the observability
 

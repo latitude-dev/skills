@@ -140,6 +140,71 @@ import {
 } from "@latitude-data/telemetry";
 ```
 
+## Per-SDK notes
+
+These are the real-world gotchas per LLM SDK. The string identifier alone is often not enough.
+
+The full set of supported identifiers (from `InstrumentationType` in `instrumentations.ts`):
+
+```
+"openai" | "anthropic" | "bedrock" | "cohere"
+"langchain" | "llamaindex" | "togetherai" | "vertexai" | "aiplatform"
+```
+
+| SDK | Notes |
+| --- | --- |
+| `openai` | If the bundler resolves a different `openai` module than the SDK auto-`require`s, no patch lands. Use Path B with `modules: { openai: OpenAI }`. Same identifier covers `AzureOpenAI` (it's exported from the same `openai` package). |
+| `@anthropic-ai/sdk` | Identifier `"anthropic"`. Same `modules` workaround applies if auto-resolution misses. |
+| `@aws-sdk/client-bedrock-runtime` | Identifier `"bedrock"`. AWS SDK v3 uses ESM exports; verify spans actually appear before declaring done. |
+| `cohere-ai`, `together-ai`, `@google-cloud/vertexai`, `@google-cloud/aiplatform` | Identifiers `"cohere"`, `"togetherai"`, `"vertexai"`, `"aiplatform"` respectively. |
+| `langchain` / `@langchain/*` | Identifier `"langchain"`. Wraps LangChain's internal callbacks; you do **not** also need to register the underlying vendor (e.g. `"openai"`) when LangChain is the only path. |
+| `llamaindex` | Identifier `"llamaindex"`. Same wrapper-level instrumentation as LangChain. |
+| **Vercel AI SDK (`ai`, `@ai-sdk/openai`, …)** | **No instrumentations identifier.** The AI SDK ships native OTel support. Initialize Latitude without listing it: `initLatitude({ apiKey, projectSlug })`. Then on each AI SDK call, set `experimental_telemetry: { isEnabled: true, metadata: { ... } }`. Latitude's smart filter picks up the SDK's `ai.*` spans automatically. Do not also register `"openai"` — it would double-count. |
+| **OpenAI Agents SDK (`@openai/agents`)** | No dedicated identifier. The Agents SDK calls into the `openai` client under the hood; register `"openai"` and the patch lands at the chat-completions layer, so each agent step is captured. |
+| **Gemini consumer SDK (`@google/generative-ai`)** | Not in the supported list. The `"aiplatform"` identifier patches `@google-cloud/aiplatform`, which is a different package. If the app is on Gemini, prefer migrating to `@google-cloud/aiplatform` or write manual spans. |
+| Custom HTTP clients (raw `fetch` to OpenAI, etc.) | Not covered by any auto-instrumentation. Either switch to the vendor SDK or write manual spans — `capture()` alone will not produce traces. |
+
+If a wrapper library is the only path used, register only the wrapper's instrumentation, not the vendor under it. If application code mixes both, register both.
+
+### Vercel AI SDK example shape
+
+```typescript
+import { initLatitude, capture } from "@latitude-data/telemetry";
+import { openai } from "@ai-sdk/openai";
+import { generateText } from "ai";
+
+const latitude = initLatitude({
+  apiKey: process.env.LATITUDE_API_KEY!,
+  projectSlug: process.env.LATITUDE_PROJECT_SLUG!,
+  // No instrumentations array — the AI SDK provides its own OTel spans.
+});
+
+await latitude.ready;
+
+await capture(
+  "handle-chat",
+  async () => {
+    const result = await generateText({
+      model: openai("gpt-4o-mini"),
+      prompt: "...",
+      experimental_telemetry: {
+        isEnabled: true,
+        metadata: { feature: "chat" },
+      },
+    });
+    return result.text;
+  },
+  { userId: "user_123", tags: ["production"] },
+);
+```
+
+## Next.js notes
+
+Two things are genuinely Next.js-specific. Everything else is generic Node guidance from the sections above.
+
+- **`instrumentation.ts` is the right place.** Next.js calls `register()` on server startup before route modules load. Put `initLatitude` (or the advanced-path setup) inside `register()` so every Route Handler and Server Action shares the same provider. If `instrumentation.ts` is not an option (legacy app, incremental adoption), put init in a shared `server-only` module imported first by every server entry point.
+- **Do not run instrumented code on the Edge runtime.** OTel exporters and patch-based instrumentations assume Node. Force `runtime = "nodejs"` on any Route Handler or Server Action that calls an LLM SDK.
+
 ## Common pitfalls
 
 | Symptom | Things to verify |
@@ -147,5 +212,7 @@ import {
 | No spans in Latitude | API key / project slug; instrumentations registered; for TS, try explicit `modules` if auto-require fails; smart filter not hiding non-LLM spans |
 | Missing spans at process exit | `flush()` / `shutdown()` |
 | `capture()` seems empty | Instrumentation must create child spans; `capture()` only adds attributes |
+| Spans missing on Next.js | `instrumentation.ts` not wired, or route is on the Edge runtime |
+| Bundler resolved a different vendor module | Pass explicit `modules: { openai: OpenAI }` (or matching vendor) to `registerLatitudeInstrumentations` |
 
 For Datadog and Sentry composition, copy the vendor sections from the upstream README rather than duplicating them here.

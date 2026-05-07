@@ -23,10 +23,12 @@ latitude = init_latitude(
 
 # ... LLM work ...
 
-latitude.shutdown()
+latitude["shutdown"]()
 ```
 
 Use env vars in real apps (`os.environ["LATITUDE_API_KEY"]`, and so on).
+
+> **Note on the return value:** `init_latitude` returns a `TypedDict` with keys `"provider"`, `"flush"`, `"shutdown"`. At runtime that is a plain `dict`, so call them with item-access: `latitude["flush"]()` and `latitude["shutdown"]()`. The README and some docstrings show `latitude.shutdown()` (attribute access) — that fails at runtime with `AttributeError`. The example test files (`packages/telemetry/python/examples/`) use `latitude["flush"]()` and are the source of truth.
 
 ## Path B — Existing OpenTelemetry (advanced)
 
@@ -49,6 +51,12 @@ register_latitude_instrumentations(
 
 ## Optional context: `capture()`
 
+`capture` supports two forms in Python. Pick whichever fits the call site; they both attach the same context.
+
+### Decorator form (preferred for whole functions)
+
+This is the primary pattern in the upstream example files (`examples/test_openai.py`, etc.).
+
 ```python
 from latitude_telemetry import init_latitude, capture
 
@@ -58,7 +66,30 @@ latitude = init_latitude(
     instrumentations=["openai"],
 )
 
-capture(
+@capture(
+    "handle-user-request",
+    {
+        "tags": ["production", "v2-agent"],
+        "session_id": "session_abc",
+        "user_id": "user_123",
+        "metadata": {"request_id": "req-xyz"},
+    },
+)
+def handle_user_request(user_message: str) -> str:
+    # LLM call inside this function gets the context above
+    response = client.chat.completions.create(...)
+    return response.choices[0].message.content
+
+result = handle_user_request("hello")
+latitude["flush"]()
+```
+
+Async functions are supported the same way (`@capture(...)` over `async def`).
+
+### Callback form (for inline code)
+
+```python
+result = capture(
     "handle-user-request",
     lambda: agent.process(user_message),
     {
@@ -69,10 +100,10 @@ capture(
     },
 )
 
-latitude.shutdown()
+latitude["shutdown"]()
 ```
 
-Use the dict keys documented in the upstream README (`user_id`, `session_id`, `tags`, `metadata`, optional `name`).
+`ContextOptions` keys: `name` (optional), `user_id`, `session_id`, `tags`, `metadata`. Same merge rules as TypeScript: tags merge+dedupe, metadata shallow-merge, ids last-write-wins.
 
 ## Public surface
 

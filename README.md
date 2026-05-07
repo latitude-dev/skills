@@ -6,35 +6,37 @@ Agent skills that teach AI coding assistants how to add [Latitude](https://latit
 
 | Skill | Description |
 | ----- | ----------- |
-| [latitude-telemetry](skills/latitude-telemetry) | Add or audit `@latitude-data/telemetry` (TypeScript) and `latitude-telemetry` (Python) instrumentation: bootstrap (`initLatitude` / `init_latitude`), advanced OpenTelemetry integration (`LatitudeSpanProcessor`, `registerLatitudeInstrumentations`), `capture()` for user/session/tags, and Vercel / Next.js deployment patterns. |
+| [latitude-telemetry](skills/latitude-telemetry) | Add or audit `@latitude-data/telemetry` (TypeScript) and `latitude-telemetry` (Python) instrumentation. Sends LLM traces (OpenAI, Anthropic, Bedrock, Vercel AI SDK, LangChain, LlamaIndex, …) to a Latitude project. Covers codebase discovery, bootstrap (`initLatitude` / `init_latitude`), advanced OpenTelemetry integration (`LatitudeSpanProcessor`, `registerLatitudeInstrumentations`), and `capture()` for user/session/tags context. |
 
 ## Installation
 
-### Cursor (project)
+### Recommended
 
-Copy or symlink the skill into your repository:
-
-```bash
-git clone https://github.com/YOUR_ORG/skills.git
-cd skills
-ln -s "$(pwd)/skills/latitude-telemetry" /path/to/your/project/.cursor/skills/latitude-telemetry
-```
-
-Adjust the clone URL to match where you host this repo.
-
-### Cursor (personal)
-
-Symlink into your personal skills directory (path may vary by Cursor version):
+Run this in your project — no prior install needed:
 
 ```bash
-ln -s /path/to/skills/skills/latitude-telemetry ~/.cursor/skills/latitude-telemetry
+npx skills add latitude-dev/skills --skill "latitude-telemetry"
 ```
 
-Do not install skills under `~/.cursor/skills-cursor/`; that tree is reserved for Cursor-managed built-ins.
+Works with Claude Code, Cursor, and any other agent that reads skills from the standard locations.
+
+### Manual symlink
+
+Clone this repo and symlink the skill into your agent's skills directory:
+
+```bash
+git clone https://github.com/latitude-dev/skills.git /path/to/latitude-skills
+ln -s /path/to/latitude-skills/skills/latitude-telemetry /path/to/skills-directory/latitude-telemetry
+```
+
+Common skills directories:
+
+- Cursor (project): `<repo>/.cursor/skills/latitude-telemetry`
+- Cursor (personal): `~/.cursor/skills/latitude-telemetry` (do **not** use `~/.cursor/skills-cursor/`; that tree is Cursor-managed)
 
 ### Manual copy
 
-Copy `skills/latitude-telemetry/` into `.cursor/skills/latitude-telemetry/` in any project.
+If symlinks are not an option, copy `skills/latitude-telemetry/` into the target skills directory.
 
 ## Prerequisites
 
