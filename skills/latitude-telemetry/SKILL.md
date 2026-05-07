@@ -1,6 +1,6 @@
 ---
 name: latitude-telemetry
-description: Install or audit Latitude LLM observability — sends traces from LLM SDKs (OpenAI, Anthropic, Bedrock, Cohere, TogetherAI, Vertex AI, Google AI Platform, OpenAI Agents, Vercel AI SDK, LangChain, LlamaIndex) to a Latitude project. TypeScript via `@latitude-data/telemetry`, Python via `latitude-telemetry`. Use when the user asks to add Latitude tracing, wire Latitude into an existing OpenTelemetry setup, fix missing traces in Latitude, or audit an existing integration. Covers codebase discovery (existing OTel, conflicting LLM-observability vendors, which LLM SDKs are in use, where LLM calls happen), `initLatitude` / `init_latitude` bootstrap, advanced setup with `LatitudeSpanProcessor` and `registerLatitudeInstrumentations`, optional `capture()` for user/session/tags context, and env vars (`LATITUDE_API_KEY`, `LATITUDE_PROJECT_SLUG`).
+description: Install or audit Latitude LLM observability — sends traces from LLM SDKs (OpenAI, Anthropic, Bedrock, Cohere, TogetherAI, Vertex AI, Google AI Platform, OpenAI Agents, Vercel AI SDK, LangChain, LlamaIndex) to a Latitude project. TypeScript via `@latitude-data/telemetry`, Python via `latitude-telemetry`, and any other OpenTelemetry-supported language (Go, Java, Ruby, .NET, PHP, Rust, Elixir, …) via direct OTLP HTTP. Use when the user asks to add Latitude tracing, wire Latitude into an existing OpenTelemetry setup, fix missing traces in Latitude, or audit an existing integration. Covers codebase discovery (existing OTel, conflicting LLM-observability vendors, which LLM SDKs are in use, where LLM calls happen), `initLatitude` / `init_latitude` bootstrap, advanced setup with `LatitudeSpanProcessor` and `registerLatitudeInstrumentations`, optional `capture()` for user/session/tags context, env vars (`LATITUDE_API_KEY`, `LATITUDE_PROJECT_SLUG`), and an OTLP fallback path for non-TS/Python codebases.
 ---
 
 # Latitude Telemetry
@@ -39,11 +39,23 @@ If missing, ask the user for them or where they are stored (`.env`, secrets mana
 
 Before deciding which install path to use, gather these facts. Read code and grep — only ask the user when the codebase truly cannot answer.
 
-#### 2a. Language and runtime
+#### 2a. Language gate (do this first)
 
-- TypeScript / Node? Plain Node, Next.js, NestJS, Hono, Fastify, Express, CLI script?
-- Python? FastAPI, Flask, Django, Celery worker, plain script, notebook?
-- Process shape: long-running server, cron, serverless function, one-shot CLI, batch job?
+Detect the host language **before** anything else. Latitude ships first-class SDKs only for TypeScript and Python; everything else uses a different install path.
+
+| Language | Path |
+| --- | --- |
+| TypeScript / JavaScript / Node | Continue with this skill — `@latitude-data/telemetry` |
+| Python | Continue with this skill — `latitude-telemetry` |
+| Go, Java, Ruby, .NET, PHP, Rust, Elixir, Kotlin, Swift, anything else | **Stop and switch to [references/otlp-fallback.md](references/otlp-fallback.md)** — there is no Latitude SDK for this language; install standard OpenTelemetry pointed at the OTLP HTTP endpoint instead |
+
+If the codebase mixes languages (e.g. Python backend + Go data pipeline), instrument each independently using the right path per language. Do not bridge them through one SDK.
+
+Once the language is confirmed as TS or Python, also note:
+
+- TypeScript / Node — Plain Node, Next.js, NestJS, Hono, Fastify, Express, CLI script?
+- Python — FastAPI, Flask, Django, Celery worker, plain script, notebook?
+- Process shape — long-running server, cron, serverless function, one-shot CLI, batch job?
 
 #### 2b. Existing OpenTelemetry instrumentation
 
@@ -206,6 +218,7 @@ If the README and this skill disagree, **the README wins**. Offer to update this
 | --- | --- |
 | TypeScript / Node specifics, ESM gotchas, `modules` option, per-SDK notes, Next.js | [references/typescript.md](references/typescript.md) |
 | Python specifics | [references/python.md](references/python.md) |
+| Non-TS/Python codebases (Go, Java, Ruby, .NET, PHP, Rust, Elixir, …) | [references/otlp-fallback.md](references/otlp-fallback.md) |
 | Auditing an existing integration or a PR | [references/audit-checklist.md](references/audit-checklist.md) |
 
 ## Packages
