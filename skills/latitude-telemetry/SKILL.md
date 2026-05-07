@@ -25,13 +25,13 @@ Run these steps in order. Do not skip discovery — that is what makes this skil
 
 ### Step 1 — Confirm credentials exist and reach the project
 
-Latitude needs two values; a third is optional for self-hosted ingest:
+Latitude needs two values; a third is optional and only matters for self-hosted or local-dev users:
 
 | Variable | Required | Where to find it |
 | --- | --- | --- |
 | `LATITUDE_API_KEY` | yes | latitude.so → workspace → Settings → API keys → New key |
 | `LATITUDE_PROJECT_SLUG` | yes | The slug in the project URL after `/projects/`, or project Settings → General |
-| `LATITUDE_TELEMETRY_URL` | no | Self-hosted ingest or non-default endpoint |
+| `LATITUDE_TELEMETRY_URL` | no | Override the OTLP ingest URL. **Defaults to `https://ingest.latitude.so`** in production, `http://localhost:3002` in dev. Leave it unset when pointing at production Latitude — set it only for self-hosted instances or non-default endpoints. |
 
 #### 1a. Look in the repo first
 
@@ -47,9 +47,13 @@ If both values are already wired up, jump to 1c. If exactly one is missing, ask 
 
 Quote the exact location so the user doesn't have to hunt:
 
-> "I need two values to wire this up. The API key is at **latitude.so → workspace Settings → API keys** (sign up at latitude.so if you don't have an account yet). The project slug is the slug in the project URL after `/projects/`, or in **project Settings → General**. Paste them here, or tell me which `.env` file to add them to."
+> "I need two values to wire this up. The API key is at **latitude.so → workspace Settings → API keys** (sign up at latitude.so if you don't have an account yet). The project slug is the slug in the project URL after `/projects/`, or in **project Settings → General**. Paste them here, or tell me which `.env` file to add them to.
+>
+> Are you connecting against production Latitude or a self-hosted / local instance? If production, you can ignore the next part — the SDK defaults to `https://ingest.latitude.so`. If self-hosted or running Latitude locally, also tell me the ingest URL so I can set `LATITUDE_TELEMETRY_URL` to that value."
 
 Never hardcode the key. Load from `process.env` / `os.environ`. If the user pastes a key, write it to `.env`, add a `.env.example` placeholder for collaborators, and confirm `.env` is in `.gitignore`.
+
+For the ingest URL: only set `LATITUDE_TELEMETRY_URL` if the user explicitly says they're on self-hosted or a non-production endpoint. If they don't mention it or say "production", leave it unset — the SDK already points at `https://ingest.latitude.so`.
 
 #### 1c. Verify credentials reach the project before writing any code
 
