@@ -160,6 +160,7 @@ The full set of supported identifiers (from `InstrumentationType` in `instrument
 | `langchain` / `@langchain/*` | Identifier `"langchain"`. Wraps LangChain's internal callbacks; you do **not** also need to register the underlying vendor (e.g. `"openai"`) when LangChain is the only path. |
 | `llamaindex` | Identifier `"llamaindex"`. Same wrapper-level instrumentation as LangChain. |
 | **Vercel AI SDK (`ai`, `@ai-sdk/openai`, …)** | **No instrumentations identifier.** The AI SDK ships native OTel support. Initialize Latitude without listing it: `initLatitude({ apiKey, projectSlug })`. Then on each AI SDK call, set `experimental_telemetry: { isEnabled: true, metadata: { ... } }`. Latitude's smart filter picks up the SDK's `ai.*` spans automatically. Do not also register `"openai"` — it would double-count. |
+| **Mastra (`@mastra/core`)** | **Do not install `@latitude-data/telemetry` at all.** Mastra ships its own OTel pipeline via `@mastra/observability` + `@mastra/otel-exporter`, emitting `gen_ai.*` spans natively. Configure Mastra's `OtelExporter` with a `custom` provider pointed at Latitude's OTLP endpoint. See "Mastra example shape" below. |
 | **OpenAI Agents SDK (`@openai/agents`)** | No dedicated identifier. The Agents SDK calls into the `openai` client under the hood; register `"openai"` and the patch lands at the chat-completions layer, so each agent step is captured. |
 | **Gemini consumer SDK (`@google/generative-ai`)** | Not in the supported list. The `"aiplatform"` identifier patches `@google-cloud/aiplatform`, which is a different package. If the app is on Gemini, prefer migrating to `@google-cloud/aiplatform` or write manual spans. |
 | Custom HTTP clients (raw `fetch` to OpenAI, etc.) | Not covered by any auto-instrumentation. Either switch to the vendor SDK or write manual spans — `capture()` alone will not produce traces. |
@@ -197,6 +198,63 @@ await capture(
   { userId: "user_123", tags: ["production"] },
 );
 ```
+
+### Mastra example shape
+
+Mastra is a special case: it has its own OTel SDK and exporter pipeline, so you do **not** install `@latitude-data/telemetry` for a Mastra-only app. Wire the Latitude OTLP endpoint directly into Mastra's `OtelExporter`.
+
+```bash
+npm install @mastra/observability @mastra/otel-exporter @opentelemetry/exporter-trace-otlp-proto
+```
+
+```typescript
+import { Mastra } from "@mastra/core";
+import { Agent } from "@mastra/core/agent";
+import { Observability } from "@mastra/observability";
+import { OtelExporter } from "@mastra/otel-exporter";
+
+const latitudeExporter = new OtelExporter({
+  provider: {
+    custom: {
+      endpoint:
+        process.env.LATITUDE_TELEMETRY_URL
+          ? `${process.env.LATITUDE_TELEMETRY_URL}/v1/traces`
+          : "https://ingest.latitude.so/v1/traces",
+      protocol: "http/protobuf",
+      headers: {
+        Authorization: `Bearer ${process.env.LATITUDE_API_KEY!}`,
+        "X-Latitude-Project": process.env.LATITUDE_PROJECT_SLUG!,
+      },
+    },
+  },
+});
+
+const agent = new Agent({
+  id: "my-agent",
+  name: "My Agent",
+  model: { provider: "OPEN_AI", name: "gpt-4o" },
+  instructions: "You are a helpful assistant.",
+});
+
+const mastra = new Mastra({
+  agents: { "my-agent": agent },
+  observability: new Observability({
+    configs: {
+      otel: {
+        serviceName: "my-mastra-app",
+        exporters: [latitudeExporter],
+      },
+    },
+  }),
+});
+```
+
+Notes:
+
+- The `LATITUDE_TELEMETRY_URL` fallback above honors the same env var the Latitude SDK would honor, so the same `.env` works for self-hosted users.
+- `protocol: "http/protobuf"` matches Mastra's docs; the `@opentelemetry/exporter-trace-otlp-proto` package must be installed.
+- Latitude UI features that depend on `latitude.tags`, `user.id`, `session.id`, etc. require setting those as standard OTel span attributes through Mastra's own context APIs. The `capture()` helper from `@latitude-data/telemetry` will not work here because there is no Latitude `TracerProvider` in the Mastra setup.
+- Source of truth: `docs/telemetry/frameworks/mastra.mdx` in the latitude-llm repo.
 
 ## Next.js notes
 
