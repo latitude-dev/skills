@@ -34,81 +34,103 @@ export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="https://ingest.latitude.so/v1/traces"
 export OTEL_EXPORTER_OTLP_TRACES_HEADERS="Authorization=Bearer <key>,X-Latitude-Project=<slug>"
 ```
 
-## Workflow
+## Pick the language reference
 
-### 1. Confirm OTel SDK presence
+Open the matching file for concrete install commands, OTel setup, and a manual LLM-span template:
 
-Is the language's official OpenTelemetry SDK already a dependency?
+| Language | Reference | LLM-instrumentation ecosystem |
+| --- | --- | --- |
+| Go | [otlp-go.md](otlp-go.md) | Sparse — manual spans realistic |
+| Java | [otlp-java.md](otlp-java.md) | Partial OpenLLMetry coverage; check community libs first, manual otherwise |
+| Ruby | [otlp-ruby.md](otlp-ruby.md) | Sparse — manual spans |
+| .NET | [otlp-dotnet.md](otlp-dotnet.md) | Sparse — manual spans |
+| PHP | [otlp-php.md](otlp-php.md) | Very thin — manual spans, plus FPM flush discipline |
+| Rust, Elixir, Kotlin, Swift, anything else | No dedicated reference — see [Other languages](#other-languages) below | Very thin or absent |
 
-- **Yes** → reuse the existing `TracerProvider`. Add an OTLP HTTP exporter to it pointing at the Latitude endpoint. Do not create a second provider.
-- **No** → install it. Every supported language has a standard package; check the language's row in the "Per-language pointers" table below.
+Each per-language reference covers: install command, minimum OTel setup with the Latitude headers, a manual LLM-span template wrapping an OpenAI-style call with `gen_ai.*` attributes, the flush-before-exit pattern for that runtime, and language-specific common pitfalls.
 
-### 2. Configure the OTLP exporter
+## Latitude UI attributes
 
-Either use the env vars above (preferred — works without code changes for the exporter), or configure the exporter in code with the endpoint and headers. The product docs page has working snippets for Go, Java, Ruby, and .NET.
-
-### 3. Instrument the LLM calls
-
-This is the language-specific step. Three options, in priority order:
-
-1. **Use a community OTel instrumentation** if one exists for the LLM client (see the per-language table). Register it on the same `TracerProvider`.
-2. **Wrap the LLM call manually** with a span that follows the `gen_ai.*` semantic conventions (see "Required attributes" below).
-3. **Stop and tell the user** if neither is realistic for their stack — for example, a niche PHP HTTP client calling OpenAI directly with no OTel wrapper available.
-
-### 4. Decorate with Latitude attributes
-
-For traces to land usefully in the Latitude UI, set these as standard span attributes (no SDK needed):
+Every per-language template sets these. Required for the trace to be useful in the Latitude UI:
 
 | Attribute | Type | Purpose |
 | --- | --- | --- |
-| `gen_ai.system` | `string` | LLM vendor name (e.g. `"openai"`, `"anthropic"`). Required for the smart UI to recognize the span as an LLM call. |
+| `gen_ai.system` | `string` | LLM vendor name (`"openai"`, `"anthropic"`, `"bedrock"`, …). Required for the UI to recognize the span as an LLM call. |
 | `gen_ai.request.model` | `string` | Model name. |
 | `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens` | `int` | Token counts. |
-| `latitude.capture.name` | `string` | Capture name (e.g. `"handle-user-request"`). Optional. |
-| `latitude.tags` | `string` (JSON array) | Tags for filtering — `'["production","v2"]'`. Optional. |
-| `latitude.metadata` | `string` (JSON object) | Free-form metadata — `'{"requestId":"abc"}'`. Optional. |
-| `session.id` | `string` | Group related traces. Optional. |
-| `user.id` | `string` | Associate with a user. Optional. |
+| `gen_ai.response.model` | `string` | Actual model returned (often equal to request, but not always). |
 
-The full list of LLM semantic conventions: [opentelemetry.io/docs/specs/semconv/gen-ai](https://opentelemetry.io/docs/specs/semconv/gen-ai/).
+Optional Latitude-specific attributes for filtering and grouping:
 
-### 5. Verify before reporting done
+| Attribute | Type | Purpose |
+| --- | --- | --- |
+| `latitude.capture.name` | `string` | Capture name (e.g. `"handle-user-request"`). |
+| `latitude.tags` | `string` (JSON array) | Tags for filtering — `'["production","v2"]'`. |
+| `latitude.metadata` | `string` (JSON object) | Free-form metadata — `'{"requestId":"abc"}'`. |
+| `session.id` | `string` | Group related traces. |
+| `user.id` | `string` | Associate with a user. |
 
-Same rule as the main skill: do not declare success because the code compiles. Run the app, trigger one LLM call, confirm the trace appears in the Latitude UI. If nothing arrives, run the curl probe from the docs page first to confirm endpoint connectivity, then check whether the exporter is actually flushing before process exit.
+Full LLM semantic conventions: [opentelemetry.io/docs/specs/semconv/gen-ai](https://opentelemetry.io/docs/specs/semconv/gen-ai/).
 
-## Per-language pointers
+## Other languages
 
-Honest assessment of what is realistic per language. The table below is for **picking which of step 3's three options applies**, not a complete library survey.
+If the language is not in the table above (Rust, Elixir, Kotlin, Swift, Crystal, Haskell, …):
 
-| Language | OTel SDK | Realistic LLM instrumentation | Recommendation |
-| --- | --- | --- | --- |
-| **Go** | `go.opentelemetry.io/otel` (mature) | Sparse community libs; no widely-adopted auto-instrumentation for `openai-go` / `anthropic-sdk-go`. | Manual spans following `gen_ai.*` conventions. |
-| **Java** | `io.opentelemetry:*` (mature) | OpenLLMetry has partial Java coverage (e.g. LangChain4j); also community OpenTelemetry instrumentations for some HTTP clients. | Try a community instrumentation first; fall back to manual spans. |
-| **Ruby** | `opentelemetry-sdk` (mature) | Sparse; mostly manual. | Manual spans. |
-| **.NET** | `OpenTelemetry` packages (mature) | `OpenTelemetry.Instrumentation.*` exists for HTTP/SQL but LLM-specific instrumentations are rare. | Manual spans. |
-| **PHP** | `open-telemetry/sdk` | Very thin LLM-instrumentation ecosystem. | Manual spans, or surface this as a gap to the user. |
-| **Rust** | `opentelemetry` crate (mature) | Very thin. | Manual spans. |
-| **Elixir** | `:opentelemetry` (mature) | Very thin. | Manual spans. |
-| **Kotlin / Swift / Other JVM / mobile** | OTel SDK exists but mobile telemetry is unusual for LLM apps. | Manual spans. | Confirm with user that traces should be sent from the mobile/edge process at all (privacy, network); often a server-side proxy is the better boundary. |
+1. Confirm the language has an official OpenTelemetry SDK at [opentelemetry.io/docs/languages](https://opentelemetry.io/docs/languages/). Almost every mainstream language does.
+2. Follow the same recipe used in the per-language references: standard OTel SDK + OTLP HTTP exporter to `https://ingest.latitude.so/v1/traces` with `Authorization: Bearer <key>` and `X-Latitude-Project: <slug>` headers.
+3. Wrap LLM calls with manual spans setting `gen_ai.system`, `gen_ai.request.model`, and the token-usage attributes from the table above.
+4. If the language has no usable OTel SDK or no realistic way to wrap LLM calls, escalate to the user using the script in [When to escalate](#when-to-escalate-to-the-user).
 
-If the user's language is not in the table but does have an OTel SDK (e.g. Erlang, Crystal, Haskell), follow the same workflow: standard OTel + OTLP exporter + manual spans with `gen_ai.*` attributes.
+Pick a per-language reference from the table that uses the closest patterns (Rust ≈ Go for tracer/span lifetime; Elixir ≈ Ruby for block-style; Kotlin ≈ Java) as a structural template, then adapt to the target language's idioms.
 
-## Common mistakes
+## Verify with curl
+
+Before instrumenting code, prove the endpoint works for the user's API key and project:
+
+```bash
+curl -X POST https://ingest.latitude.so/v1/traces \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "X-Latitude-Project: YOUR_PROJECT_SLUG" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resourceSpans": [{
+      "resource": { "attributes": [{ "key": "service.name", "value": { "stringValue": "curl-test" } }] },
+      "scopeSpans": [{
+        "scope": { "name": "manual-test" },
+        "spans": [{
+          "traceId": "00000000000000000000000000000001",
+          "spanId": "0000000000000001",
+          "name": "test-span",
+          "kind": 1,
+          "startTimeUnixNano": "1700000000000000000",
+          "endTimeUnixNano": "1700000001000000000",
+          "attributes": [{ "key": "gen_ai.system", "value": { "stringValue": "openai" } }]
+        }]
+      }]
+    }]
+  }'
+```
+
+A `202` response with `{}` means the endpoint accepted the payload. Confirm the trace appears in the Latitude UI before continuing.
+
+## Common mistakes (universal)
+
+Language-specific pitfalls live in each per-language reference. The following bite on every language:
 
 | Mistake | Why it fails | Fix |
 | --- | --- | --- |
-| Sending arbitrary, non-LLM spans to the Latitude endpoint | Smart filter does not apply on this path; every span is stored, cluttering the UI | Only export spans that represent LLM operations, or use an `OTEL_TRACES_SAMPLER` / span processor to filter before export |
+| Sending arbitrary, non-LLM spans | Smart filter does not apply on this path; every span is stored, cluttering the UI | Only export spans that represent LLM operations, or filter via a span processor before export |
 | Missing `X-Latitude-Project` header | `400 Bad Request` | Include it on every request |
 | `Authorization` without the `Bearer ` prefix | `401 Unauthorized` | Use `Bearer <key>` (note the space) |
 | No `gen_ai.system` attribute | Span lands but Latitude UI does not classify it as an LLM call | Set `gen_ai.system = "openai"` (or matching vendor) on every LLM span |
 | Process exits before exporter flushes | Trace silently dropped | Call the SDK's shutdown / force-flush hook before exit; in serverless, flush before returning |
-| Generated TypeScript/Python files into a Go/PHP/etc. codebase | Wrong language; will not compile or run | This skill explicitly does not do that — re-read the "What this skill will and will not do" table at the top |
+| Generated TypeScript/Python files into a Go/PHP/etc. codebase | Wrong language; will not compile or run | Re-read [What this skill will and will not do](#what-this-skill-will-and-will-not-do-here) |
 
 ## When to escalate to the user
 
 Stop and ask the user when:
 
-- The language has no usable OTel SDK at all (extremely rare in 2026, but possible for hobby languages).
+- The language has no usable OTel SDK at all (rare in 2026, but possible for hobby languages).
 - The LLM call goes through a custom HTTP client and the user is unwilling to wrap it in a manual span — there's no other path forward.
 - Self-hosted Latitude with an unknown ingest endpoint — the URL above is for production cloud only.
 
