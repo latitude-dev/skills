@@ -23,17 +23,43 @@ If the user reports "no traces appear," 90% of the time the `capture()` callback
 
 Run these steps in order. Do not skip discovery — that is what makes this skill different from "read a README and paste a snippet."
 
-### Step 1 — Confirm credentials exist
+### Step 1 — Confirm credentials exist and reach the project
 
-Before touching code, check that the user has these values:
+Latitude needs two values; a third is optional for self-hosted ingest:
 
-| Variable | Required | Source |
+| Variable | Required | Where to find it |
 | --- | --- | --- |
-| `LATITUDE_API_KEY` | yes | Latitude UI → Settings → API keys |
-| `LATITUDE_PROJECT_SLUG` | yes | Project URL or Settings in Latitude |
+| `LATITUDE_API_KEY` | yes | latitude.so → workspace → Settings → API keys → New key |
+| `LATITUDE_PROJECT_SLUG` | yes | The slug in the project URL after `/projects/`, or project Settings → General |
 | `LATITUDE_TELEMETRY_URL` | no | Self-hosted ingest or non-default endpoint |
 
-If missing, ask the user for them or where they are stored (`.env`, secrets manager, Vercel project settings, etc.). Do **not** hardcode keys; load from environment.
+#### 1a. Look in the repo first
+
+Before asking the user, search for already-configured credentials in this order:
+
+1. `.env`, `.env.local`, `.env.development`, `.env.production`, `.env.example`
+2. Host-specific secrets files (`fly.toml`, `vercel.json`, IaC manifests, Helm `values.yaml`, GitHub/GitLab CI variables in workflow files)
+3. Existing `process.env.LATITUDE_*` / `os.environ["LATITUDE_*"]` references in code
+
+If both values are already wired up, jump to 1c. If exactly one is missing, ask the user only for that one — don't ask for both blindly.
+
+#### 1b. How to ask, if missing
+
+Quote the exact location so the user doesn't have to hunt:
+
+> "I need two values to wire this up. The API key is at **latitude.so → workspace Settings → API keys** (sign up at latitude.so if you don't have an account yet). The project slug is the slug in the project URL after `/projects/`, or in **project Settings → General**. Paste them here, or tell me which `.env` file to add them to."
+
+Never hardcode the key. Load from `process.env` / `os.environ`. If the user pastes a key, write it to `.env`, add a `.env.example` placeholder for collaborators, and confirm `.env` is in `.gitignore`.
+
+#### 1c. Verify credentials reach the project before writing any code
+
+Run the curl probe in [references/otlp-fallback.md](references/otlp-fallback.md#verify-with-curl) — it works regardless of language and tells you in one shot:
+
+- `202` → credentials valid, project exists. Continue.
+- `401` → bad API key. Re-check at latitude.so → Settings → API keys.
+- `400` with a missing-project message → wrong project slug or wrong header name.
+
+Do not write SDK code until the probe returns `202`. This catches the LAT-558 class of bug ("code looks fine, no traces appear") at the credential layer instead of after a full implementation.
 
 ### Step 2 — Discover the codebase
 
