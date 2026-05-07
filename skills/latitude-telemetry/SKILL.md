@@ -1,6 +1,6 @@
 ---
 name: latitude-telemetry
-description: Install or audit Latitude LLM observability — sends traces from LLM SDKs (OpenAI, Anthropic, Bedrock, Cohere, TogetherAI, Vertex AI, Google AI Platform, OpenAI Agents, Vercel AI SDK, LangChain, LlamaIndex) to a Latitude project. TypeScript via `@latitude-data/telemetry`, Python via `latitude-telemetry`. Use when the user asks to add Latitude tracing, wire Latitude into an existing OpenTelemetry setup, fix missing traces in Latitude, or audit an existing integration. Covers codebase discovery (existing OTel, conflicting LLM-observability vendors, which LLM SDKs are in use, where LLM calls happen), `initLatitude` / `init_latitude` bootstrap, advanced setup with `LatitudeSpanProcessor` and `registerLatitudeInstrumentations`, optional `capture()` for user/session/tags context, and env vars (`LATITUDE_API_KEY`, `LATITUDE_PROJECT_SLUG`).
+description: Install or audit Latitude LLM observability — sends traces from LLM SDKs (OpenAI, Anthropic, Bedrock, Cohere, TogetherAI, Vertex AI, Google AI Platform, OpenAI Agents, Vercel AI SDK, LangChain, LlamaIndex) to a Latitude project. TypeScript via `@latitude-data/telemetry`, Python via `latitude-telemetry`, and any other OpenTelemetry-supported language (Go, Java, Ruby, .NET, PHP, Rust, Elixir, …) via direct OTLP HTTP. Use when the user asks to add Latitude tracing, wire Latitude into an existing OpenTelemetry setup, fix missing traces in Latitude, or audit an existing integration. Covers codebase discovery (existing OTel, conflicting LLM-observability vendors, which LLM SDKs are in use, where LLM calls happen), `initLatitude` / `init_latitude` bootstrap, advanced setup with `LatitudeSpanProcessor` and `registerLatitudeInstrumentations`, optional `capture()` for user/session/tags context, env vars (`LATITUDE_API_KEY`, `LATITUDE_PROJECT_SLUG`), and an OTLP fallback path for non-TS/Python codebases.
 ---
 
 # Latitude Telemetry
@@ -23,27 +23,69 @@ If the user reports "no traces appear," 90% of the time the `capture()` callback
 
 Run these steps in order. Do not skip discovery — that is what makes this skill different from "read a README and paste a snippet."
 
-### Step 1 — Confirm credentials exist
+### Step 1 — Confirm credentials exist and reach the project
 
-Before touching code, check that the user has these values:
+Latitude needs two values; a third is optional and only matters for self-hosted or local-dev users:
 
-| Variable | Required | Source |
+| Variable | Required | Where to find it |
 | --- | --- | --- |
-| `LATITUDE_API_KEY` | yes | Latitude UI → Settings → API keys |
-| `LATITUDE_PROJECT_SLUG` | yes | Project URL or Settings in Latitude |
-| `LATITUDE_TELEMETRY_URL` | no | Self-hosted ingest or non-default endpoint |
+| `LATITUDE_API_KEY` | yes | latitude.so → workspace → Settings → API keys → New key |
+| `LATITUDE_PROJECT_SLUG` | yes | The slug in the project URL after `/projects/`, or project Settings → General |
+| `LATITUDE_TELEMETRY_URL` | no | Override the OTLP ingest URL. **Defaults to `https://ingest.latitude.so`** in production, `http://localhost:3002` in dev. Leave it unset when pointing at production Latitude — set it only for self-hosted instances or non-default endpoints. |
 
-If missing, ask the user for them or where they are stored (`.env`, secrets manager, Vercel project settings, etc.). Do **not** hardcode keys; load from environment.
+#### 1a. Look in the repo first
+
+Before asking the user, search for already-configured credentials in this order:
+
+1. `.env`, `.env.local`, `.env.development`, `.env.production`, `.env.example`
+2. Host-specific secrets files (`fly.toml`, `vercel.json`, IaC manifests, Helm `values.yaml`, GitHub/GitLab CI variables in workflow files)
+3. Existing `process.env.LATITUDE_*` / `os.environ["LATITUDE_*"]` references in code
+
+If both values are already wired up, jump to 1c. If exactly one is missing, ask the user only for that one — don't ask for both blindly.
+
+#### 1b. How to ask, if missing
+
+Quote the exact location so the user doesn't have to hunt:
+
+> "I need two values to wire this up. The API key is at **latitude.so → workspace Settings → API keys** (sign up at latitude.so if you don't have an account yet). The project slug is the slug in the project URL after `/projects/`, or in **project Settings → General**. Paste them here, or tell me which `.env` file to add them to.
+>
+> Are you connecting against production Latitude or a self-hosted / local instance? If production, you can ignore the next part — the SDK defaults to `https://ingest.latitude.so`. If self-hosted or running Latitude locally, also tell me the ingest URL so I can set `LATITUDE_TELEMETRY_URL` to that value."
+
+Never hardcode the key. Load from `process.env` / `os.environ`. If the user pastes a key, write it to `.env`, add a `.env.example` placeholder for collaborators, and confirm `.env` is in `.gitignore`.
+
+For the ingest URL: only set `LATITUDE_TELEMETRY_URL` if the user explicitly says they're on self-hosted or a non-production endpoint. If they don't mention it or say "production", leave it unset — the SDK already points at `https://ingest.latitude.so`.
+
+#### 1c. Verify credentials reach the project before writing any code
+
+Run the curl probe in [references/otlp-fallback.md](references/otlp-fallback.md#verify-with-curl) — it works regardless of language and tells you in one shot:
+
+- `202` → credentials valid, project exists. Continue.
+- `401` → bad API key. Re-check at latitude.so → Settings → API keys.
+- `400` with a missing-project message → wrong project slug or wrong header name.
+
+Do not write SDK code until the probe returns `202`. This catches the LAT-558 class of bug ("code looks fine, no traces appear") at the credential layer instead of after a full implementation.
 
 ### Step 2 — Discover the codebase
 
 Before deciding which install path to use, gather these facts. Read code and grep — only ask the user when the codebase truly cannot answer.
 
-#### 2a. Language and runtime
+#### 2a. Language gate (do this first)
 
-- TypeScript / Node? Plain Node, Next.js, NestJS, Hono, Fastify, Express, CLI script?
-- Python? FastAPI, Flask, Django, Celery worker, plain script, notebook?
-- Process shape: long-running server, cron, serverless function, one-shot CLI, batch job?
+Detect the host language **before** anything else. Latitude ships first-class SDKs only for TypeScript and Python; everything else uses a different install path.
+
+| Language | Path |
+| --- | --- |
+| TypeScript / JavaScript / Node | Continue with this skill — `@latitude-data/telemetry` |
+| Python | Continue with this skill — `latitude-telemetry` |
+| Go, Java, Ruby, .NET, PHP, Rust, Elixir, Kotlin, Swift, anything else | **Stop and switch to [references/otlp-fallback.md](references/otlp-fallback.md)** — there is no Latitude SDK for this language; install standard OpenTelemetry pointed at the OTLP HTTP endpoint instead |
+
+If the codebase mixes languages (e.g. Python backend + Go data pipeline), instrument each independently using the right path per language. Do not bridge them through one SDK.
+
+Once the language is confirmed as TS or Python, also note:
+
+- TypeScript / Node — Plain Node, Next.js, NestJS, Hono, Fastify, Express, CLI script?
+- Python — FastAPI, Flask, Django, Celery worker, plain script, notebook?
+- Process shape — long-running server, cron, serverless function, one-shot CLI, batch job?
 
 #### 2b. Existing OpenTelemetry instrumentation
 
@@ -206,6 +248,7 @@ If the README and this skill disagree, **the README wins**. Offer to update this
 | --- | --- |
 | TypeScript / Node specifics, ESM gotchas, `modules` option, per-SDK notes, Next.js | [references/typescript.md](references/typescript.md) |
 | Python specifics | [references/python.md](references/python.md) |
+| Non-TS/Python codebases (Go, Java, Ruby, .NET, PHP, Rust, Elixir, …) | [references/otlp-fallback.md](references/otlp-fallback.md) |
 | Auditing an existing integration or a PR | [references/audit-checklist.md](references/audit-checklist.md) |
 
 ## Packages
