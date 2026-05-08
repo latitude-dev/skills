@@ -172,7 +172,7 @@ Grep imports for the supported instrumentations. The result drives the `instrume
 | `llamaindex` (TS) / `llama-index` (Py) | `"llamaindex"` |
 | `ai` (Vercel AI SDK) | **none** — see special case below |
 | `@mastra/core` (Mastra) | **none** — TypeScript-only special case; do not install `@latitude-data/telemetry` at all. See special case below |
-| `@openai/agents` (OpenAI Agents SDK) | `"openai"` — Agents SDK calls into the `openai` client under the hood; the patch lands at the chat-completions layer |
+| `@openai/agents` (OpenAI Agents SDK) | `"openai-agents"` — has its own dedicated instrumentation; do NOT use `"openai"` for this. See [docs.latitude.so/telemetry/frameworks/openai-agents](https://docs.latitude.so/telemetry/frameworks/openai-agents) |
 
 Special cases:
 

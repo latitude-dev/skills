@@ -159,9 +159,11 @@ These are the real-world gotchas per LLM SDK. The string identifier alone is oft
 The full set of supported identifiers (from `InstrumentationType` in `instrumentations.ts`):
 
 ```
-"openai" | "anthropic" | "bedrock" | "cohere"
+"openai" | "openai-agents" | "anthropic" | "bedrock" | "cohere"
 "langchain" | "llamaindex" | "togetherai" | "vertexai" | "aiplatform"
 ```
+
+**The pattern is uniform:** every supported framework / SDK is enabled by adding its identifier string to `instrumentations`. There is no special wiring for any of them — pick the right identifier from the list above and pass it in. Do not invent identifiers (e.g. `"openai-agent"` singular is wrong, `"openai-agents"` is correct).
 
 | SDK | Notes |
 | --- | --- |
@@ -173,7 +175,7 @@ The full set of supported identifiers (from `InstrumentationType` in `instrument
 | `llamaindex` | Identifier `"llamaindex"`. Same wrapper-level instrumentation as LangChain. |
 | **Vercel AI SDK (`ai`, `@ai-sdk/openai`, …)** | **No instrumentations identifier.** The AI SDK ships native OTel support. Initialize Latitude without listing it: `initLatitude({ apiKey, projectSlug })`. Then on each AI SDK call, set `experimental_telemetry: { isEnabled: true, metadata: { ... } }`. Latitude's smart filter picks up the SDK's `ai.*` spans automatically. Do not also register `"openai"` — it would double-count. |
 | **Mastra (`@mastra/core`)** | **Do not install `@latitude-data/telemetry` at all.** Mastra ships its own OTel pipeline via `@mastra/observability` + `@mastra/otel-exporter`, emitting `gen_ai.*` spans natively. Configure Mastra's `OtelExporter` with a `custom` provider pointed at Latitude's OTLP endpoint. See "Mastra example shape" below. |
-| **OpenAI Agents SDK (`@openai/agents`)** | No dedicated identifier. The Agents SDK calls into the `openai` client under the hood; register `"openai"` and the patch lands at the chat-completions layer, so each agent step is captured. |
+| **OpenAI Agents SDK (`@openai/agents`)** | Identifier `"openai-agents"`. This is a dedicated instrumentation — do **not** register `"openai"` for the Agents SDK; that was earlier guidance and it is wrong. Install both packages: `npm install @latitude-data/telemetry@alpha @openai/agents`. Then `initLatitude({ apiKey, projectSlug, instrumentations: ["openai-agents"] })`. Source: [docs.latitude.so/telemetry/frameworks/openai-agents](https://docs.latitude.so/telemetry/frameworks/openai-agents). |
 | **Gemini consumer SDK (`@google/generative-ai`)** | Not in the supported list. The `"aiplatform"` identifier patches `@google-cloud/aiplatform`, which is a different package. If the app is on Gemini, prefer migrating to `@google-cloud/aiplatform` or write manual spans. |
 | Custom HTTP clients (raw `fetch` to OpenAI, etc.) | Not covered by any auto-instrumentation. Either switch to the vendor SDK or write manual spans — `capture()` alone will not produce traces. |
 

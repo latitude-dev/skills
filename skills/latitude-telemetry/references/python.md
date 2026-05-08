@@ -120,6 +120,41 @@ from latitude_telemetry import (
 )
 ```
 
+## Supported instrumentation identifiers
+
+The pattern is the same as TypeScript: pick the identifier that matches the SDK in use and pass it in `instrumentations=[...]`. There is no special wiring per framework — the identifier is the entire integration.
+
+```
+"openai" | "openai-agents" | "anthropic" | "bedrock" | "cohere"
+"langchain" | "llamaindex" | "togetherai" | "vertexai" | "aiplatform"
+```
+
+| If the app uses | Add to `instrumentations` |
+| --- | --- |
+| `openai` (chat completions / responses API) | `"openai"` |
+| `openai-agents` (the Agents SDK Python package) | `"openai-agents"` — dedicated instrumentation, do **not** use `"openai"` here. See [docs.latitude.so/telemetry/frameworks/openai-agents](https://docs.latitude.so/telemetry/frameworks/openai-agents) |
+| `anthropic` | `"anthropic"` |
+| `boto3` Bedrock client | `"bedrock"` |
+| `cohere` | `"cohere"` |
+| `together` | `"togetherai"` |
+| `google-cloud-aiplatform` | `"aiplatform"` (or `"vertexai"` for the Vertex AI client) |
+| `langchain-core`, `langchain` | `"langchain"` |
+| `llama-index` | `"llamaindex"` |
+
+For the OpenAI Agents Python install:
+
+```bash
+pip install --pre latitude-telemetry openai-agents
+```
+
+```python
+latitude = init_latitude(
+    api_key="your-api-key",
+    project_slug="your-project-slug",
+    instrumentations=["openai-agents"],
+)
+```
+
 ## Common pitfalls
 
 | Symptom | Things to verify |
