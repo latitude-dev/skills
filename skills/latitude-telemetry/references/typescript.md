@@ -6,9 +6,13 @@ The product docs at [Latitude — Developers overview](https://docs.latitude.so/
 
 ## Install
 
+**Always pin to the `alpha` dist-tag.** The stable release is older than the API surface this reference describes; without `@alpha` the install resolves to a version that is missing functions referenced below.
+
 ```bash
-npm install @latitude-data/telemetry
+npm install @latitude-data/telemetry@alpha
 ```
+
+For other package managers, use the equivalent alpha-channel install: `pnpm add @latitude-data/telemetry@alpha`, `yarn add @latitude-data/telemetry@alpha`, `bun add @latitude-data/telemetry@alpha`. Do not drop the `@alpha` tag.
 
 ## Path A — Bootstrap (recommended)
 

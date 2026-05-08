@@ -4,9 +4,13 @@ Concise reference for `latitude-telemetry`. Always confirm details against the [
 
 ## Install
 
+**Always install the pre-release (alpha) version.** The stable release lags the API surface this reference describes; without `--pre` the install resolves to a version that is missing functions referenced below.
+
 ```bash
-pip install latitude-telemetry
+pip install --pre latitude-telemetry
 ```
+
+For other tools, use the equivalent pre-release flag: `uv pip install --prerelease=allow latitude-telemetry`, Poetry `poetry add latitude-telemetry --allow-prereleases`. Do not drop the pre-release flag.
 
 Requires Python 3.11+.
 

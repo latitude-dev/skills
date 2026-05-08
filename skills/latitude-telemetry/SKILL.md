@@ -255,10 +255,14 @@ If the README and this skill disagree, **the README wins**. Offer to update this
 
 ## Packages
 
+**Always install the alpha tag.** The stable releases are behind the current SDK surface this skill targets — installing without the alpha tag will pull an older version that is missing APIs referenced here. Do not drop the `@alpha` / `--pre` flag, even if the user does not mention pre-release versions.
+
 | Language | Install | Public surface |
 | --- | --- | --- |
-| TypeScript / Node | `npm install @latitude-data/telemetry` | `initLatitude`, `LatitudeSpanProcessor`, `registerLatitudeInstrumentations`, `capture` |
-| Python (3.11+) | `pip install latitude-telemetry` | `init_latitude`, `LatitudeSpanProcessor`, `register_latitude_instrumentations`, `capture` |
+| TypeScript / Node | `npm install @latitude-data/telemetry@alpha` | `initLatitude`, `LatitudeSpanProcessor`, `registerLatitudeInstrumentations`, `capture` |
+| Python (3.11+) | `pip install --pre latitude-telemetry` | `init_latitude`, `LatitudeSpanProcessor`, `register_latitude_instrumentations`, `capture` |
+
+If the user's package manager is not npm/pip, translate the same intent: `pnpm add @latitude-data/telemetry@alpha`, `yarn add @latitude-data/telemetry@alpha`, `bun add @latitude-data/telemetry@alpha`, `uv pip install --prerelease=allow latitude-telemetry`, `poetry add latitude-telemetry@^0.0.0-alpha` (or `--allow-prereleases`). The alpha channel is mandatory; stable is not yet aligned with this skill.
 
 ## Common mistakes
 
