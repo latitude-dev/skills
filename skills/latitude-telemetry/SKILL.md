@@ -15,6 +15,8 @@ Install Latitude LLM observability into a user's codebase **correctly the first 
 
 **Rule 3 — Never silently fall through on missing env vars.** When `LATITUDE_API_KEY` or `LATITUDE_PROJECT_SLUG` is missing (or set to a placeholder like `your-api-key`, `xxx`, `<replace-me>`), surface the gap to the user with explicit ❌ markers — never just continue. See Step 1a / 1b for the exact checklist format. The user must see at a glance which variables are missing and where to add them.
 
+**Rule 4 — Never write credential values to `.env` (or any secrets file) yourself.** The user must paste the API key and project slug into the file with their own hands. You do not have a way to know whether the values you'd write are real — past runs of this skill have invented plausible-looking but fake keys (`lat_sk_...`, `proj_abc123`) and saved them to `.env`, so the install "completed" but no traces ever flowed. Even if the user pastes a value into the chat, **do not transcribe it into `.env`** — show them the exact line to add and have them write it themselves. You may create or edit `.env.example` with empty placeholders (`LATITUDE_API_KEY=`, `LATITUDE_PROJECT_SLUG=`) and you may confirm `.env` is in `.gitignore`, but the real values are user-write-only.
+
 Concretely for Rule 1:
 
 - ✅ `capture("handle-chat", () => openai.chat.completions.create(...))` — the OpenAI auto-instrumentation creates the span; `capture` decorates it.
@@ -33,8 +35,8 @@ Latitude needs two values. This skill targets production Latitude only — the i
 
 | Variable | Required | Where to find it |
 | --- | --- | --- |
-| `LATITUDE_API_KEY` | yes | latitude.so → workspace → Settings → API keys → New key |
-| `LATITUDE_PROJECT_SLUG` | yes | The slug in the project URL after `/projects/`, or project Settings → General |
+| `LATITUDE_API_KEY` | yes | [https://console.latitude.so/settings/api-keys](https://console.latitude.so/settings/api-keys) → click **New key** → copy the value (it is shown once). |
+| `LATITUDE_PROJECT_SLUG` | yes | Open the project in the console; the URL is `https://console.latitude.so/projects/<slug>`. The `<slug>` segment is the value. |
 
 #### 1a. Look in the repo first
 
@@ -64,18 +66,43 @@ Latitude credentials check — target: .env
 
 If only one is missing, mark the present one with ✅ and the missing one with ❌, so the user sees both states. Detect the right target file from what already exists in the repo (e.g. if the repo uses `.env.local`, write there; if it uses Doppler / Fly secrets / Vercel env, name those instead of inventing a `.env`).
 
-Then tell the user where to get each missing value, quoting exact locations:
+Then **walk the user through how to get each missing value** — give them clickable URLs and step-by-step instructions, not vague "look in settings" hints. **You will not write the values to the file; the user will.** Use this template, including only the bullets for variables that are ❌:
 
-> The API key is at **latitude.so → workspace Settings → API keys** (sign up at latitude.so if you don't have an account yet). The project slug is the slug in the project URL after `/projects/`, or in **project Settings → General**. Paste them here, or tell me which file to add them to — I detected `<file>` as the most likely target.
+> Here is how to get the missing values. **You will need to add them to `<file>` yourself — I will not write secrets to that file for you.**
+>
+> **`LATITUDE_API_KEY`**
+> 1. Open [https://console.latitude.so/settings/api-keys](https://console.latitude.so/settings/api-keys) (sign up at [https://console.latitude.so](https://console.latitude.so) first if you don't have an account).
+> 2. Click **New key**, give it a name (e.g. `local-dev` or the service name), and copy the value — it is only shown once.
+>
+> **`LATITUDE_PROJECT_SLUG`**
+> 1. Open the project you want to send traces to in the console. The URL will look like `https://console.latitude.so/projects/<slug>`.
+> 2. Copy the `<slug>` segment from the URL — that is the value.
+> 3. If you don't have a project yet, create one at [https://console.latitude.so](https://console.latitude.so) and the slug is generated from the project name.
+>
+> Then paste these two lines into `<file>` (replacing `…` with the values you just copied) and save the file:
+>
+> ```
+> LATITUDE_API_KEY=…
+> LATITUDE_PROJECT_SLUG=…
+> ```
+>
+> Tell me when it is saved and I will re-check.
 
-Never hardcode the key. Load from `process.env` / `os.environ`. If the user pastes a key, write it to the detected target file, add a placeholder to `.env.example` for collaborators (`LATITUDE_API_KEY=`, `LATITUDE_PROJECT_SLUG=`), and confirm `.env` is in `.gitignore`. After writing, re-run the ❌/✅ check and show the updated checklist so the user can confirm everything is now ✅ before moving on.
+**Do not transcribe the values into `<file>` yourself, even if the user pastes them into the chat.** If the user pastes a key into the chat, acknowledge it but instruct them to put it in `<file>` themselves — you cannot verify it is a real key, and prior runs of this skill have written invented or placeholder values that broke the install silently.
+
+What you *may* do without a real value:
+- Create or edit `.env.example` with empty placeholders: `LATITUDE_API_KEY=` and `LATITUDE_PROJECT_SLUG=` so collaborators know which keys to set.
+- Confirm `.env` (or whichever target you detected) is listed in `.gitignore` and add it if missing.
+- Re-run the ❌/✅ check after the user reports they've saved the file, and show the updated checklist so they can confirm everything is now ✅ before moving on.
+
+Never hardcode the key in source code either; load from `process.env` / `os.environ` only.
 
 #### 1c. Verify credentials reach the project before writing any code
 
 Run the curl probe in [references/otlp-fallback.md](references/otlp-fallback.md#verify-with-curl) — it works regardless of language and tells you in one shot:
 
 - `202` → credentials valid, project exists. Continue.
-- `401` → bad API key. Re-check at latitude.so → Settings → API keys.
+- `401` → bad API key. Re-check at [https://console.latitude.so/settings/api-keys](https://console.latitude.so/settings/api-keys).
 - `400` with a missing-project message → wrong project slug or wrong header name.
 
 Do not write SDK code until the probe returns `202`. This catches the LAT-558 class of bug ("code looks fine, no traces appear") at the credential layer instead of after a full implementation.
@@ -323,6 +350,7 @@ If the user's package manager is not npm/pip, translate the same intent: `pnpm a
 | Adding `"openai"` to `instrumentations` for Vercel AI SDK code | Double-counted spans, confusing traces | The AI SDK has native OTel; just enable `experimental_telemetry: { isEnabled: true }` per call. Do not register `"openai"` for AI SDK paths. |
 | Python: `latitude.shutdown()` (attribute access) | `AttributeError` — `init_latitude` returns a dict | Use item access: `latitude["shutdown"]()` and `latitude["flush"]()` |
 | Hardcoded API key | Leaks in repo, breaks per-env config | Read from `process.env` / `os.environ` |
+| Agent writes the API key / slug to `.env` itself | Agent has no way to know if the value is real; past runs have invented plausible-looking fakes (`lat_sk_...`, `proj_abc123`) and the install silently never produced traces | The user must write `.env` themselves; agent only shows the lines to add and may edit `.env.example` with empty placeholders |
 | Script exits before flush | Buffered batches dropped | `await latitude.shutdown()` (TS) or `latitude.shutdown()` (Py) |
 | Two OTel `TracerProvider` instances | Spans split across providers | Advanced path with one shared provider |
 | Edge runtime on Next.js | OTel exporters/patches assume Node | Force `runtime = "nodejs"` on the route |
