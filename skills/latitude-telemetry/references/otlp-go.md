@@ -122,7 +122,6 @@ defer func() {
 | Mistake | Fix |
 | --- | --- |
 | Forgetting `tp.Shutdown` in CLIs / Lambda | Spans buffered, never sent. Always defer shutdown. |
-| Hardcoding the endpoint | Use `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` if you may switch to self-hosted. |
 | Setting attributes after `span.End()` | Dropped silently. Call `SetAttributes` before End or while span is active. |
 | Missing `gen_ai.system` | Span lands but Latitude UI does not classify it as an LLM call. |
 | Goroutine leaks the parent context | LLM calls run with `context.Background()` — pass the request `ctx` so spans nest under HTTP/handler spans. |

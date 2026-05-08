@@ -13,6 +13,8 @@ Install Latitude LLM observability into a user's codebase **correctly the first 
 
 **Rule 2 — Always `await latitude.ready` (TS) / `latitude["ready"]` is implicit (Py) before the first LLM call.** `initLatitude` returns immediately and registers patches in the background. If the first LLM call fires before `ready` resolves, the patch may not have hooked the SDK yet and the trace is silently lost. Past installs by this skill have shipped without the await and produced empty trace lists. Make this the first line after `initLatitude`.
 
+**Rule 3 — Never silently fall through on missing env vars.** When `LATITUDE_API_KEY` or `LATITUDE_PROJECT_SLUG` is missing (or set to a placeholder like `your-api-key`, `xxx`, `<replace-me>`), surface the gap to the user with explicit ❌ markers — never just continue. See Step 1a / 1b for the exact checklist format. The user must see at a glance which variables are missing and where to add them.
+
 Concretely for Rule 1:
 
 - ✅ `capture("handle-chat", () => openai.chat.completions.create(...))` — the OpenAI auto-instrumentation creates the span; `capture` decorates it.
@@ -27,13 +29,12 @@ Run these steps in order. Do not skip discovery — that is what makes this skil
 
 ### Step 1 — Confirm credentials exist and reach the project
 
-Latitude needs two values; a third is optional and only matters for self-hosted or local-dev users:
+Latitude needs two values. This skill targets production Latitude only — the ingest endpoint is `https://ingest.latitude.so` and is not configurable through this skill.
 
 | Variable | Required | Where to find it |
 | --- | --- | --- |
 | `LATITUDE_API_KEY` | yes | latitude.so → workspace → Settings → API keys → New key |
 | `LATITUDE_PROJECT_SLUG` | yes | The slug in the project URL after `/projects/`, or project Settings → General |
-| `LATITUDE_TELEMETRY_URL` | no | Override the OTLP ingest URL. **Defaults to `https://ingest.latitude.so`** in production, `http://localhost:3002` in dev. Leave it unset when pointing at production Latitude — set it only for self-hosted instances or non-default endpoints. |
 
 #### 1a. Look in the repo first
 
@@ -43,19 +44,31 @@ Before asking the user, search for already-configured credentials in this order:
 2. Host-specific secrets files (`fly.toml`, `vercel.json`, IaC manifests, Helm `values.yaml`, GitHub/GitLab CI variables in workflow files)
 3. Existing `process.env.LATITUDE_*` / `os.environ["LATITUDE_*"]` references in code
 
-If both values are already wired up, jump to 1c. If exactly one is missing, ask the user only for that one — don't ask for both blindly.
+For each variable, classify it as one of:
+
+- ✅ **Set with a real value** in one of the locations above.
+- ❌ **Missing** — not present anywhere, or only present as an empty string / placeholder (`""`, `your-api-key`, `xxx`, `<replace-me>`, `changeme`).
+
+If both values are ✅, jump to 1c. If anything is ❌, go to 1b — and only ask for the variables that are actually missing.
 
 #### 1b. How to ask, if missing
 
-Quote the exact location so the user doesn't have to hunt:
+When one or more variables are missing, **report the gap to the user using ❌ explicitly** — do not bury it in prose. The user must be able to see at a glance which variables are missing and where they need to be set. Use a checklist format like this (adapt to whatever target file you detected — `.env`, `.env.local`, `fly.toml`, `vercel.json`, GitHub Actions secrets, Helm values, etc.):
 
-> "I need two values to wire this up. The API key is at **latitude.so → workspace Settings → API keys** (sign up at latitude.so if you don't have an account yet). The project slug is the slug in the project URL after `/projects/`, or in **project Settings → General**. Paste them here, or tell me which `.env` file to add them to.
->
-> Are you connecting against production Latitude or a self-hosted / local instance? If production, you can ignore the next part — the SDK defaults to `https://ingest.latitude.so`. If self-hosted or running Latitude locally, also tell me the ingest URL so I can set `LATITUDE_TELEMETRY_URL` to that value."
+```
+Latitude credentials check — target: .env
 
-Never hardcode the key. Load from `process.env` / `os.environ`. If the user pastes a key, write it to `.env`, add a `.env.example` placeholder for collaborators, and confirm `.env` is in `.gitignore`.
+❌ LATITUDE_API_KEY — missing
+❌ LATITUDE_PROJECT_SLUG — missing
+```
 
-For the ingest URL: only set `LATITUDE_TELEMETRY_URL` if the user explicitly says they're on self-hosted or a non-production endpoint. If they don't mention it or say "production", leave it unset — the SDK already points at `https://ingest.latitude.so`.
+If only one is missing, mark the present one with ✅ and the missing one with ❌, so the user sees both states. Detect the right target file from what already exists in the repo (e.g. if the repo uses `.env.local`, write there; if it uses Doppler / Fly secrets / Vercel env, name those instead of inventing a `.env`).
+
+Then tell the user where to get each missing value, quoting exact locations:
+
+> The API key is at **latitude.so → workspace Settings → API keys** (sign up at latitude.so if you don't have an account yet). The project slug is the slug in the project URL after `/projects/`, or in **project Settings → General**. Paste them here, or tell me which file to add them to — I detected `<file>` as the most likely target.
+
+Never hardcode the key. Load from `process.env` / `os.environ`. If the user pastes a key, write it to the detected target file, add a placeholder to `.env.example` for collaborators (`LATITUDE_API_KEY=`, `LATITUDE_PROJECT_SLUG=`), and confirm `.env` is in `.gitignore`. After writing, re-run the ❌/✅ check and show the updated checklist so the user can confirm everything is now ✅ before moving on.
 
 #### 1c. Verify credentials reach the project before writing any code
 

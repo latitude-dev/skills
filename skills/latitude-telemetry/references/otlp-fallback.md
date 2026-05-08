@@ -19,7 +19,7 @@ If the language has no viable LLM-instrumentation ecosystem **and** the user is 
 
 | | Value |
 | --- | --- |
-| URL | `https://ingest.latitude.so/v1/traces` (production default — confirm with user if self-hosted) |
+| URL | `https://ingest.latitude.so/v1/traces` |
 | Method | `POST` |
 | `Authorization` | `Bearer <LATITUDE_API_KEY>` |
 | `X-Latitude-Project` | `<LATITUDE_PROJECT_SLUG>` |
@@ -132,6 +132,5 @@ Stop and ask the user when:
 
 - The language has no usable OTel SDK at all (rare in 2026, but possible for hobby languages).
 - The LLM call goes through a custom HTTP client and the user is unwilling to wrap it in a manual span — there's no other path forward.
-- Self-hosted Latitude with an unknown ingest endpoint — the URL above is for production cloud only.
 
 Frame the question concretely: *"I see you're using `<lang>` with `<lib>`. Latitude doesn't have a turnkey path here. The realistic options are: (a) I write manual OTel spans wrapping each LLM call following `gen_ai.*` conventions, (b) you point me at a community instrumentation library you'd like to use, or (c) we file this as a request with Latitude for first-class support. Which do you prefer?"*

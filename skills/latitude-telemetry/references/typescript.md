@@ -228,10 +228,7 @@ import { OtelExporter } from "@mastra/otel-exporter";
 const latitudeExporter = new OtelExporter({
   provider: {
     custom: {
-      endpoint:
-        process.env.LATITUDE_TELEMETRY_URL
-          ? `${process.env.LATITUDE_TELEMETRY_URL}/v1/traces`
-          : "https://ingest.latitude.so/v1/traces",
+      endpoint: "https://ingest.latitude.so/v1/traces",
       protocol: "http/protobuf",
       headers: {
         Authorization: `Bearer ${process.env.LATITUDE_API_KEY!}`,
@@ -263,7 +260,6 @@ const mastra = new Mastra({
 
 Notes:
 
-- The `LATITUDE_TELEMETRY_URL` fallback above honors the same env var the Latitude SDK would honor, so the same `.env` works for self-hosted users.
 - `protocol: "http/protobuf"` matches Mastra's docs; the `@opentelemetry/exporter-trace-otlp-proto` package must be installed.
 - Latitude UI features that depend on `latitude.tags`, `user.id`, `session.id`, etc. require setting those as standard OTel span attributes through Mastra's own context APIs. The `capture()` helper from `@latitude-data/telemetry` will not work here because there is no Latitude `TracerProvider` in the Mastra setup.
 - Source of truth: `docs/telemetry/frameworks/mastra.mdx` in the latitude-llm repo.
