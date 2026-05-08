@@ -7,17 +7,19 @@ description: Install or audit Latitude LLM observability — sends traces from L
 
 Install Latitude LLM observability into a user's codebase **correctly the first time**. Most failed installs share the same root cause: telemetry was added in a place that does not actually run an LLM call, so no traces appear. This skill guides you through codebase discovery before writing any code.
 
-## The single most important rule
+## Two rules you must not break
 
-**`capture()` does NOT create spans.** It only attaches user/session/tags/metadata to spans that auto-instrumentation creates from inside the callback.
+**Rule 1 — `capture()` does NOT create spans.** It only attaches user/session/tags/metadata to spans that auto-instrumentation creates from inside the callback.
 
-Concretely:
+**Rule 2 — Always `await latitude.ready` (TS) / `latitude["ready"]` is implicit (Py) before the first LLM call.** `initLatitude` returns immediately and registers patches in the background. If the first LLM call fires before `ready` resolves, the patch may not have hooked the SDK yet and the trace is silently lost. Past installs by this skill have shipped without the await and produced empty trace lists. Make this the first line after `initLatitude`.
+
+Concretely for Rule 1:
 
 - ✅ `capture("handle-chat", () => openai.chat.completions.create(...))` — the OpenAI auto-instrumentation creates the span; `capture` decorates it.
 - ❌ `capture("compute-prompt", () => buildPromptString(...))` — no LLM call inside, no span, no trace.
 - ❌ Wrapping the whole HTTP server `register` callback — telemetry has not started yet.
 
-If the user reports "no traces appear," 90% of the time the `capture()` callback does not invoke an auto-instrumented LLM SDK. Verify this before debugging anything else.
+If the user reports "no traces appear," 90% of the time the `capture()` callback does not invoke an auto-instrumented LLM SDK, **or** Rule 2 was skipped. Verify both before debugging anything else.
 
 ## Workflow
 
@@ -174,6 +176,38 @@ Conflicting LLM-observability vendor?
 
 Initialization must run **once per process** at startup, **before** the first LLM call. Patch-based auto-instrumentation also requires init to run **before** the LLM client is constructed when the patch hooks the constructor.
 
+#### TypeScript: keep it inline, do not create new files
+
+For TypeScript installs, **do not invent a new telemetry module** (`telemetry.ts`, `lib/latitude.ts`, `setup/observability.ts`, etc.). Add `initLatitude` directly to the file where the LLM call already lives, at the top, before the LLM SDK is used. Less indirection means less to debug when traces don't appear.
+
+Minimal shape — copy this when adding to a single-file script that uses the Vercel AI SDK:
+
+```typescript
+import { initLatitude, capture } from "@latitude-data/telemetry";
+import { generateText } from "ai";
+import { openai } from "@ai-sdk/openai";
+
+const latitude = initLatitude({
+  apiKey: process.env.LATITUDE_API_KEY!,
+  projectSlug: process.env.LATITUDE_PROJECT_SLUG!,
+});
+
+await latitude.ready; // REQUIRED — see Rule 2 at top of skill
+
+await capture("generate-support-reply", async () => {
+  const { text } = await generateText({
+    model: openai("gpt-4o"),
+    prompt: "Hello",
+    experimental_telemetry: { isEnabled: true },
+  });
+  return text;
+});
+
+await latitude.shutdown();
+```
+
+The only times you should put init in a separate file are framework-mandated bootstrap files that **already exist** (e.g. Next.js `instrumentation.ts`, NestJS `main.ts`, an existing `server.ts` / `index.ts`). Even then: edit the existing file, do not create a wrapper module around `initLatitude`.
+
 Common locations by stack:
 
 | Stack | Place init in |
@@ -269,6 +303,8 @@ If the user's package manager is not npm/pip, translate the same intent: `pnpm a
 | Mistake | Why it fails | Fix |
 | --- | --- | --- |
 | `capture()` wraps a non-LLM function | No span is created — `capture()` only decorates existing spans | Move `capture()` to the boundary that calls the LLM SDK |
+| `await latitude.ready` skipped | First LLM call races the patch registration; trace silently dropped | Always put `await latitude.ready` directly after `initLatitude` |
+| New `telemetry.ts` / `lib/latitude.ts` module created to hold init | Adds an import layer that often runs the LLM SDK before init; pure indirection | Inline `initLatitude` in the file that already runs the LLM call |
 | `initLatitude` runs after the LLM client is constructed | Patch never applied | Import telemetry first; in Next.js use `instrumentation.ts` |
 | `instrumentations: []` while OpenAI is in use | No vendor patched, no spans | Add `"openai"` (or matching vendor) |
 | Adding `"openai"` to `instrumentations` for Vercel AI SDK code | Double-counted spans, confusing traces | The AI SDK has native OTel; just enable `experimental_telemetry: { isEnabled: true }` per call. Do not register `"openai"` for AI SDK paths. |

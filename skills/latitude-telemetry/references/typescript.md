@@ -18,27 +18,35 @@ For other package managers, use the equivalent alpha-channel install: `pnpm add 
 
 Single entrypoint builds OpenTelemetry, LLM auto-instrumentation, and Latitude export.
 
+**Keep it inline — do NOT create a dedicated `telemetry.ts` / `lib/latitude.ts` module just to hold this.** Put the four lines below at the top of the file that already runs the LLM call. Wrapping the bootstrap in a helper module is a frequent source of import-order bugs (the helper imports the LLM SDK before init runs) and adds nothing.
+
 ```typescript
-import { initLatitude } from "@latitude-data/telemetry";
+import { initLatitude, capture } from "@latitude-data/telemetry";
+import { generateText } from "ai";
+import { openai } from "@ai-sdk/openai";
 
 const latitude = initLatitude({
   apiKey: process.env.LATITUDE_API_KEY!,
   projectSlug: process.env.LATITUDE_PROJECT_SLUG!,
-  instrumentations: ["openai"], // which providers to enable — see “Instrumentations vs vendor modules” below
 });
 
-// Optional: await latitude.ready before first LLM calls if you must guarantee patches are applied
-await latitude.ready;
+await latitude.ready; // REQUIRED — never skip this
 
-// ... LLM work ...
+await capture("generate-support-reply", async () => {
+  const { text } = await generateText({
+    model: openai("gpt-4o"),
+    prompt: "Hello",
+    experimental_telemetry: { isEnabled: true },
+  });
+  return text;
+});
 
 await latitude.shutdown();
 ```
 
-Notes from upstream:
+When using a non-AI-SDK vendor (raw `openai`, `@anthropic-ai/sdk`, …), add the matching identifier to `instrumentations`, e.g. `instrumentations: ["openai"]`. See "Instrumentations vs vendor modules" below.
 
-- `initLatitude` returns immediately; instrumentations register in the background.
-- Use `await latitude.ready` when you need registration finished before the first LLM call (helps in tests and tight races).
+`await latitude.ready` is **required, not optional.** `initLatitude` returns immediately and patches run in the background; without `await latitude.ready`, the first LLM call can fire before the patch lands and the trace is silently lost. Past installs by this skill have shipped without it and produced empty trace lists. If you find yourself tempted to skip it, stop — there is no scenario in this skill where omitting it is correct.
 
 ### Instrumentations vs vendor modules
 
@@ -184,7 +192,7 @@ const latitude = initLatitude({
   // No instrumentations array — the AI SDK provides its own OTel spans.
 });
 
-await latitude.ready;
+await latitude.ready; // REQUIRED — never skip this
 
 await capture(
   "handle-chat",
