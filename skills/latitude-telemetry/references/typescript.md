@@ -6,26 +6,33 @@ The product docs at [Latitude — Developers overview](https://docs.latitude.so/
 
 ## Install
 
-**Always pin to the `alpha` dist-tag.** The stable release is older than the API surface this reference describes; without `@alpha` the install resolves to a version that is missing functions referenced below.
+**Always look up the current pre-release and pin to it.** The SDK is on the `alpha` / `beta` channel and the API surface changes between releases. The `@alpha` dist-tag floats, so a CI re-run weeks later may land on a different version with a different API surface. Look up once, pin exact.
 
 ```bash
-npm install @latitude-data/telemetry@alpha
+# Find the current version (e.g. 3.0.0-alpha.10).
+npm view @latitude-data/telemetry@alpha version
+# If the SDK has moved to beta, this returns nothing — try @beta:
+npm view @latitude-data/telemetry@beta version
+
+# Pin to the exact version returned.
+npm install @latitude-data/telemetry@3.0.0-alpha.10
+# Or: pnpm add / yarn add / bun add with the same exact-version syntax.
 ```
 
-For other package managers, use the equivalent alpha-channel install: `pnpm add @latitude-data/telemetry@alpha`, `yarn add @latitude-data/telemetry@alpha`, `bun add @latitude-data/telemetry@alpha`. Do not drop the `@alpha` tag.
+Confirm the lockfile (`package-lock.json` / `pnpm-lock.yaml` / `yarn.lock`) captures the pin. Without a lock, the install will drift again.
 
 ## Path A — Bootstrap (recommended)
 
-Single entrypoint builds OpenTelemetry, LLM auto-instrumentation, and Latitude export.
+`new Latitude({...})` is the canonical entry point. It auto-detects an existing OpenTelemetry `TracerProvider` (registered globally or passed via `tracerProvider`) and attaches its span processor to it; if none exists, it creates and registers one. Path B (manual `LatitudeSpanProcessor` + `registerLatitudeInstrumentations`) is reserved for cases where you already build the provider yourself and want full control.
 
 **Keep it inline — do NOT create a dedicated `telemetry.ts` / `lib/latitude.ts` module just to hold this.** Put the four lines below at the top of the file that already runs the LLM call. Wrapping the bootstrap in a helper module is a frequent source of import-order bugs (the helper imports the LLM SDK before init runs) and adds nothing.
 
 ```typescript
-import { initLatitude, capture } from "@latitude-data/telemetry";
+import { Latitude, capture } from "@latitude-data/telemetry";
 import { generateText } from "ai";
 import { openai } from "@ai-sdk/openai";
 
-const latitude = initLatitude({
+const latitude = new Latitude({
   apiKey: process.env.LATITUDE_API_KEY!,
   projectSlug: process.env.LATITUDE_PROJECT_SLUG!,
 });
@@ -46,31 +53,74 @@ await latitude.shutdown();
 
 When using a non-AI-SDK vendor (raw `openai`, `@anthropic-ai/sdk`, …), add the matching identifier to `instrumentations`, e.g. `instrumentations: ["openai"]`. See "Instrumentations vs vendor modules" below.
 
-`await latitude.ready` is **required, not optional.** `initLatitude` returns immediately and patches run in the background; without `await latitude.ready`, the first LLM call can fire before the patch lands and the trace is silently lost. Past installs by this skill have shipped without it and produced empty trace lists. If you find yourself tempted to skip it, stop — there is no scenario in this skill where omitting it is correct.
+`await latitude.ready` is **required, not optional.** `new Latitude({...})` returns immediately and patches run in the background; without `await latitude.ready`, the first LLM call can fire before the patch lands and the trace is silently lost. Past installs by this skill have shipped without it and produced empty trace lists. If you find yourself tempted to skip it, stop — there is no scenario in this skill where omitting it is correct.
+
+### `projectSlug` is optional on the constructor
+
+If your app emits to several Latitude projects (multi-agent, multi-feature), omit `projectSlug` from the constructor and pass it on each `capture()` call instead. See [project-scoping.md](project-scoping.md) for the full pattern and precedence rules. For single-project apps, keep `projectSlug` in the constructor — it's the simpler shape.
+
+### Legacy `initLatitude`
+
+`initLatitude({...})` still exists as a thin wrapper around `new Latitude({...})` for backwards compatibility with older code samples. New installs should use the class directly. If you're reading an existing codebase that calls `initLatitude`, leave it alone — the wrapper is supported — but suggest the class form when adding new init.
 
 ### Instrumentations vs vendor modules
 
 `instrumentations` is an array of **string identifiers** (`"openai"`, `"anthropic"`, …). That list tells Latitude **which** Traceloop instrumentations to register. By default the SDK tries to load each vendor package itself (`require` / dynamic `import`).
 
-Patch-based instrumentation only works if the SDK resolves the **same module instance** your app uses. In ESM-first apps, monorepos, or bundled servers, auto-resolution can fail silently. In those cases, use **Path B** and pass explicit **`modules`** (vendor exports) into `registerLatitudeInstrumentations` — for example OpenAI expects the client class you import from `openai`, not only the string `"openai"`:
+Patch-based instrumentation only works if the SDK resolves the **same module instance** your app uses. In ESM-first apps, monorepos, or bundled servers, auto-resolution can fail silently. In those cases, drop down to `registerLatitudeInstrumentations` directly and pass explicit **`modules`** (vendor exports) — for example OpenAI expects the client class you import from `openai`, not only the string `"openai"`:
 
 ```typescript
 import OpenAI from "openai";
-import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
-import {
-  LatitudeSpanProcessor,
-  registerLatitudeInstrumentations,
-} from "@latitude-data/telemetry";
+import { Latitude, registerLatitudeInstrumentations } from "@latitude-data/telemetry";
 
-const provider = new NodeTracerProvider({
-  spanProcessors: [
-    new LatitudeSpanProcessor(
-      process.env.LATITUDE_API_KEY!,
-      process.env.LATITUDE_PROJECT_SLUG!,
-    ),
-  ],
+const latitude = new Latitude({
+  apiKey: process.env.LATITUDE_API_KEY!,
+  projectSlug: process.env.LATITUDE_PROJECT_SLUG!,
+  // Skip `instrumentations` here — we'll register manually below with explicit modules.
 });
-provider.register();
+
+await registerLatitudeInstrumentations({
+  instrumentations: ["openai"],
+  modules: { openai: OpenAI },
+  tracerProvider: latitude.provider,
+});
+
+await latitude.ready; // Still required for any instrumentations passed to the constructor.
+```
+
+The constructor's `instrumentations` option does not currently accept `modules`; if you need explicit module overrides, register manually as above. Watch the package README for a future `instrumentationModules` field on `LatitudeOptions`.
+
+## Path B — Existing OpenTelemetry (advanced)
+
+If your app already builds a `NodeSDK` / `NodeTracerProvider` and you want to keep full control of it, hand it to the constructor:
+
+```typescript
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { Latitude } from "@latitude-data/telemetry";
+
+const sdk = new NodeSDK({
+  spanProcessors: [/* existing processors */],
+});
+sdk.start();
+
+const latitude = new Latitude({
+  apiKey: process.env.LATITUDE_API_KEY!,
+  projectSlug: process.env.LATITUDE_PROJECT_SLUG!,
+  instrumentations: ["openai"],
+  tracerProvider: sdk.getTracerProvider(),
+});
+
+await latitude.ready;
+```
+
+The constructor attaches `LatitudeSpanProcessor` to the provider you passed; your existing processors continue to receive every span. If you skip `tracerProvider`, the SDK auto-detects a globally-registered provider — same outcome with fewer lines.
+
+For the rare case where you want to manage everything yourself (no constructor at all), the lower-level primitives are still exported:
+
+```typescript
+import { LatitudeSpanProcessor, registerLatitudeInstrumentations } from "@latitude-data/telemetry";
+
+provider.addSpanProcessor(new LatitudeSpanProcessor(apiKey, projectSlug));
 
 await registerLatitudeInstrumentations({
   instrumentations: ["openai"],
@@ -79,49 +129,17 @@ await registerLatitudeInstrumentations({
 });
 ```
 
-`initLatitude` currently forwards only `instrumentations` to the registrar (no `modules` option on `InitLatitudeOptions` in upstream `types.ts`). If you need explicit `modules` with bootstrap-level convenience, either use Path B as above or watch the package README for a future `modules` / `instrumentationModules` option on `initLatitude`.
-
-## Path B — Existing OpenTelemetry (advanced)
-
-Use when a `NodeSDK` / `NodeTracerProvider` already exists or when sending spans to multiple backends.
-
-```typescript
-import { NodeSDK } from "@opentelemetry/sdk-node";
-import {
-  LatitudeSpanProcessor,
-  registerLatitudeInstrumentations,
-} from "@latitude-data/telemetry";
-
-const sdk = new NodeSDK({
-  spanProcessors: [
-    /* existing processors */
-    new LatitudeSpanProcessor(
-      process.env.LATITUDE_API_KEY!,
-      process.env.LATITUDE_PROJECT_SLUG!,
-    ),
-  ],
-});
-
-sdk.start();
-
-await registerLatitudeInstrumentations({
-  instrumentations: ["openai"],
-  tracerProvider: sdk.getTracerProvider(),
-  // When auto-require misses the vendor package, pass the same import your app uses:
-  // modules: { openai: OpenAI },
-});
-```
-
-Keep smart filtering and redaction behavior in mind (defaults are documented upstream). Option names in the published README may lag the source; the implementation lives in `packages/telemetry/typescript/src/sdk/instrumentations.ts` (`modules` today).
+Use this only when the constructor's auto-detection genuinely doesn't fit (multi-process / multi-provider exotic setups). For everything else, `new Latitude({...})` is shorter and less error-prone. Option names in the published README may lag the source; the implementation lives in `packages/telemetry/typescript/src/sdk/instrumentations.ts` (`modules` today).
 
 ## Optional context: `capture()`
 
-Wrap request- or agent-level work to stamp `user.id`, `session.id`, `latitude.tags`, and `latitude.metadata` onto spans created inside the callback.
+Wrap request- or agent-level work to stamp `user.id`, `session.id`, `latitude.tags`, `latitude.metadata`, and (optionally) `latitude.project` onto spans created inside the callback.
 
 ```typescript
-import { initLatitude, capture } from "@latitude-data/telemetry";
+import { Latitude, capture } from "@latitude-data/telemetry";
 
-const latitude = initLatitude({ /* ... */ });
+const latitude = new Latitude({ /* ... */ });
+await latitude.ready;
 
 await capture(
   "handle-user-request",
@@ -133,11 +151,16 @@ await capture(
     sessionId: "session_abc",
     tags: ["production"],
     metadata: { requestId: "req-xyz" },
+    // Optional — routes this capture (and its children) to a different Latitude
+    // project than the constructor's default. See project-scoping.md.
+    // projectSlug: "evaluation-runs",
   },
 );
 
 await latitude.shutdown();
 ```
+
+For the multi-project pattern (per-capture `projectSlug` override, OTEL resource attribute alternative, bare-OTel routing), see [project-scoping.md](project-scoping.md).
 
 ## Public surface (import map)
 
@@ -145,12 +168,14 @@ Typical imports:
 
 ```typescript
 import {
-  initLatitude,
+  Latitude,
   LatitudeSpanProcessor,
   capture,
   registerLatitudeInstrumentations,
 } from "@latitude-data/telemetry";
 ```
+
+`initLatitude` is still exported for backwards compatibility but is just a wrapper around `new Latitude({...})`; prefer the class form for new code.
 
 ## Per-SDK notes
 
@@ -175,7 +200,7 @@ The full set of supported identifiers (from `InstrumentationType` in `instrument
 | `llamaindex` | Identifier `"llamaindex"`. Same wrapper-level instrumentation as LangChain. |
 | **Vercel AI SDK (`ai`, `@ai-sdk/openai`, …)** | **No instrumentations identifier.** The AI SDK ships native OTel support. Initialize Latitude without listing it: `initLatitude({ apiKey, projectSlug })`. Then on each AI SDK call, set `experimental_telemetry: { isEnabled: true, metadata: { ... } }`. Latitude's smart filter picks up the SDK's `ai.*` spans automatically. Do not also register `"openai"` — it would double-count. |
 | **Mastra (`@mastra/core`)** | **Do not install `@latitude-data/telemetry` at all.** Mastra ships its own OTel pipeline via `@mastra/observability` + `@mastra/otel-exporter`, emitting `gen_ai.*` spans natively. Configure Mastra's `OtelExporter` with a `custom` provider pointed at Latitude's OTLP endpoint. See "Mastra example shape" below. |
-| **OpenAI Agents SDK (`@openai/agents`)** | Identifier `"openai-agents"`. This is a dedicated instrumentation — do **not** register `"openai"` for the Agents SDK; that was earlier guidance and it is wrong. Install both packages: `npm install @latitude-data/telemetry@alpha @openai/agents`. Then `initLatitude({ apiKey, projectSlug, instrumentations: ["openai-agents"] })`. Source: [docs.latitude.so/telemetry/frameworks/openai-agents](https://docs.latitude.so/telemetry/frameworks/openai-agents). |
+| **OpenAI Agents SDK (`@openai/agents`)** | Identifier `"openai-agents"`. This is a dedicated instrumentation — do **not** register `"openai"` for the Agents SDK; that was earlier guidance and it is wrong. Install both packages (substituting the version you got from Step 2): `npm install @latitude-data/telemetry@<version> @openai/agents`. Then `new Latitude({ apiKey, projectSlug, instrumentations: ["openai-agents"] })`. Source: [docs.latitude.so/telemetry/frameworks/openai-agents](https://docs.latitude.so/telemetry/frameworks/openai-agents). |
 | **Gemini consumer SDK (`@google/generative-ai`)** | Not in the supported list. The `"aiplatform"` identifier patches `@google-cloud/aiplatform`, which is a different package. If the app is on Gemini, prefer migrating to `@google-cloud/aiplatform` or write manual spans. |
 | Custom HTTP clients (raw `fetch` to OpenAI, etc.) | Not covered by any auto-instrumentation. Either switch to the vendor SDK or write manual spans — `capture()` alone will not produce traces. |
 
@@ -184,11 +209,11 @@ If a wrapper library is the only path used, register only the wrapper's instrume
 ### Vercel AI SDK example shape
 
 ```typescript
-import { initLatitude, capture } from "@latitude-data/telemetry";
+import { Latitude, capture } from "@latitude-data/telemetry";
 import { openai } from "@ai-sdk/openai";
 import { generateText } from "ai";
 
-const latitude = initLatitude({
+const latitude = new Latitude({
   apiKey: process.env.LATITUDE_API_KEY!,
   projectSlug: process.env.LATITUDE_PROJECT_SLUG!,
   // No instrumentations array — the AI SDK provides its own OTel spans.
@@ -270,7 +295,7 @@ Notes:
 
 Two things are genuinely Next.js-specific. Everything else is generic Node guidance from the sections above.
 
-- **`instrumentation.ts` is the right place.** Next.js calls `register()` on server startup before route modules load. Put `initLatitude` (or the advanced-path setup) inside `register()` so every Route Handler and Server Action shares the same provider. If `instrumentation.ts` is not an option (legacy app, incremental adoption), put init in a shared `server-only` module imported first by every server entry point.
+- **`instrumentation.ts` is the right place.** Next.js calls `register()` on server startup before route modules load. Put `new Latitude({...})` inside `register()` so every Route Handler and Server Action shares the same provider. If `instrumentation.ts` is not an option (legacy app, incremental adoption), put init in a shared `server-only` module imported first by every server entry point.
 - **Do not run instrumented code on the Edge runtime.** OTel exporters and patch-based instrumentations assume Node. Force `runtime = "nodejs"` on any Route Handler or Server Action that calls an LLM SDK.
 
 ## Common pitfalls

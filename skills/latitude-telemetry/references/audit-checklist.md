@@ -2,19 +2,27 @@
 
 Use when reviewing an existing integration or a pull request that touches observability.
 
-## Bootstrap vs OpenTelemetry
+## Bootstrap shape
 
-- [ ] **Bootstrap** (`initLatitude` / `init_latitude`) is used for new apps unless multiple span processors are required.
-- [ ] **Advanced** path adds `LatitudeSpanProcessor` to an existing provider and calls `registerLatitudeInstrumentations` / `register_latitude_instrumentations` with the **same** `TracerProvider`.
+- [ ] **Class-based entry point** is used: `new Latitude({...})` (TS) or `Latitude(...)` (Python). Legacy `initLatitude` / `init_latitude` wrappers are acceptable in older code but new init should use the class.
+- [ ] When the host app already builds a `TracerProvider`, it's passed via `tracerProvider` (TS) / `tracer_provider` (Py) — not duplicated.
+- [ ] Lower-level path (`LatitudeSpanProcessor` + `registerLatitudeInstrumentations`) is only used when the class's auto-detection doesn't fit; otherwise the class is shorter and less error-prone.
+
+## Version pinning
+
+- [ ] The package manifest pins to an **exact** pre-release version, not a floating tag (`@alpha`, `--pre`, `^`, `~`). Run `npm view @latitude-data/telemetry@alpha version` / `pip index versions latitude-telemetry --pre` to check whether the pinned version is current.
+- [ ] Lockfile (`package-lock.json` / `pnpm-lock.yaml` / `uv.lock` / `poetry.lock`) captures the same exact version.
 
 ## Correctness
 
-- [ ] `LATITUDE_API_KEY` and `LATITUDE_PROJECT_SLUG` are read from the environment on the server, not hard-coded.
+- [ ] `LATITUDE_API_KEY` is read from the environment on the server, not hard-coded.
+- [ ] `LATITUDE_PROJECT_SLUG` is set in env when the app uses one project; for multi-project apps, every `capture()` either sets its own `projectSlug` or relies on an OTEL resource attribute (see [project-scoping.md](project-scoping.md)).
 - [ ] LLM client imports occur **after** telemetry bootstrap when patch-based auto-instrumentation requires it.
+- [ ] **TypeScript**: `await latitude.ready` is called before the first LLM call.
 - [ ] **TypeScript**: `instrumentations` includes every vendor SDK actually used; if spans are missing despite installs, verify explicit **`modules`** (imported client classes) on `registerLatitudeInstrumentations` per [typescript.md](typescript.md).
 - [ ] **Python**: `instrumentations` list includes every vendor SDK actually used (OpenAI, Anthropic, and so on).
 - [ ] **Vercel AI SDK** code is NOT also registered via `instrumentations: ["openai"]`; it uses `experimental_telemetry: { isEnabled: true }` per call instead.
-- [ ] **Python return value** uses item access: `latitude["flush"]()` / `latitude["shutdown"]()`, not attribute access.
+- [ ] **Python class API**: `latitude.flush()` / `latitude.shutdown()` (attribute access). If code calls `latitude["flush"]()` on a `Latitude(...)` instance, that's wrong — item access only applies to the legacy `init_latitude(...)` dict return value.
 - [ ] Short-lived processes call `flush()` / `shutdown()` (or provider `forceFlush()`).
 
 ## Context and privacy
@@ -28,6 +36,12 @@ Use when reviewing an existing integration or a pull request that touches observ
 - [ ] Initialization runs **once per process** at startup, before LLM clients are constructed.
 - [ ] Short-lived processes (CLI, scripts, jobs) call `flush()` / `shutdown()` before exit.
 - [ ] Serverless handlers (Lambda, Cloud Run, etc.) `flush()` after LLM work, before returning or suspending.
+
+## Multi-project routing (if applicable)
+
+- [ ] Only **one** `Latitude` instance is created per process — even when the app emits to several projects. Two instances will warn about provider attachment and double-process spans; use per-capture `projectSlug` / `project_slug` instead.
+- [ ] Secondary project slugs used in `capture({ projectSlug })` actually exist in the org behind `LATITUDE_API_KEY`. Unknown slugs are silently rejected at ingest (the OTel exporter logs the 400 at `diag.WARN`, but the UI just shows nothing).
+- [ ] When using bare OpenTelemetry with the OTEL resource attribute `latitude.project`, the resource is set on the `TracerProvider` (not as a span attribute by mistake — see [project-scoping.md](project-scoping.md)).
 
 ## Observability of the observability
 

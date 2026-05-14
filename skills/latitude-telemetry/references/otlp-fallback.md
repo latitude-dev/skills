@@ -22,10 +22,10 @@ If the language has no viable LLM-instrumentation ecosystem **and** the user is 
 | URL | `https://ingest.latitude.so/v1/traces` |
 | Method | `POST` |
 | `Authorization` | `Bearer <LATITUDE_API_KEY>` |
-| `X-Latitude-Project` | `<LATITUDE_PROJECT_SLUG>` |
+| `X-Latitude-Project` | `<LATITUDE_PROJECT_SLUG>` *(optional if you set `latitude.project` as a resource attribute — see below)* |
 | `Content-Type` | `application/json` or `application/x-protobuf` |
 
-Returns `202` on success. The smart filter does **not** apply on this path — every span sent is ingested. Do not export non-LLM spans you don't want stored.
+Returns `200` with an empty body on success. The smart filter does **not** apply on this path — every span sent is ingested. Do not export non-LLM spans you don't want stored.
 
 Most OTel SDKs respect these env vars, so you can often skip code changes entirely:
 
@@ -33,6 +33,15 @@ Most OTel SDKs respect these env vars, so you can often skip code changes entire
 export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="https://ingest.latitude.so/v1/traces"
 export OTEL_EXPORTER_OTLP_TRACES_HEADERS="Authorization=Bearer <key>,X-Latitude-Project=<slug>"
 ```
+
+### Routing to multiple projects from one OTLP exporter
+
+If a single service emits to several Latitude projects, you have two alternatives to the `X-Latitude-Project` header:
+
+1. **OTEL resource attribute `latitude.project`** — set once on the `Resource` of the `TracerProvider`. Every span emitted by that provider carries the attribute. Useful when one OTLP exporter routes to one project but you don't want to maintain header configuration alongside the rest of OTel setup.
+2. **Per-span `latitude.project` attribute** — set on individual spans for overrides. Wins over the resource attribute and the header.
+
+Server-side precedence (highest first): span attribute → resource attribute → header. See [project-scoping.md](project-scoping.md) for the full rules. Spans whose slug is unknown to the org (or absent at all levels) are rejected with HTTP 400 + a `google.rpc.Status`-shaped body; the OTel exporter will surface this at `diag.WARN` level — turn it on if traces seem to vanish silently.
 
 ## Pick the language reference
 
@@ -111,7 +120,7 @@ curl -X POST https://ingest.latitude.so/v1/traces \
   }'
 ```
 
-A `202` response with `{}` means the endpoint accepted the payload. Confirm the trace appears in the Latitude UI before continuing.
+A `200` response with `{}` means the endpoint accepted the payload (a `202` is also possible for empty / no-span batches — both are success). Confirm the trace appears in the Latitude UI before continuing. A `400` with `{ "code": 400, "message": "..." }` means the project slug couldn't be resolved (missing or unknown); the `message` includes a link to the project-scoping docs.
 
 ## Common mistakes (universal)
 
