@@ -69,12 +69,14 @@ You can also omit `projectSlug` from the constructor entirely — every `capture
 ## Python
 
 ```python
-from latitude_telemetry import Latitude, capture
+import openai
 from openai import OpenAI
+
+from latitude_telemetry import Latitude, capture
 
 latitude = Latitude(
     api_key=os.environ["LATITUDE_API_KEY"],
-    instrumentations=["openai"],
+    instrumentations={"openai": openai},
     # No project_slug — every capture must set its own.
 )
 

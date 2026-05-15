@@ -28,7 +28,15 @@ Use when reviewing an existing integration or a pull request that touches observ
   ```
 
   If the installed version is `< 3.0.0-alpha.11`, this is also an upgrade gate — bump the pin AND migrate every `instrumentations: [...]` call site in the same PR (see SKILL.md Rule 6 and Step 2's "Upgrading an existing TypeScript install" sub-section). Leaving the old call shape with the new version will throw at bootstrap; leaving the old version pinned silently fails the day Renovate or CI bumps it.
-- [ ] **Python**: `instrumentations` list includes every vendor SDK actually used (OpenAI, Anthropic, and so on). Python keeps the string-identifier API; only TypeScript moved to the object form.
+- [ ] **Python — `instrumentations` shape is post-`3.0.0a7`.** Same object-form rules as TypeScript: dict mapping integration name → the LLM SDK module the consumer imports (e.g. `{"openai": openai, "anthropic": anthropic}`). The legacy list-of-strings form (`instrumentations=["openai"]`) is **removed in `3.0.0a7`+** and raises `TypeError` at register time. Mechanical rewrite:
+
+  ```diff
+  - instrumentations=["openai"]
+  + # ensure `import openai` is at the top
+  + instrumentations={"openai": openai}
+  ```
+
+  Like the TypeScript side, if the installed version is `< 3.0.0a7`, this is also an upgrade gate — bump the pin AND migrate every `instrumentations=[...]` call site in the same PR.
 - [ ] **Vercel AI SDK** code is NOT also registered via an `instrumentations` entry like `openai: OpenAI`; it uses `experimental_telemetry: { isEnabled: true }` per call instead.
 - [ ] **Python class API**: `latitude.flush()` / `latitude.shutdown()` (attribute access). If code calls `latitude["flush"]()` on a `Latitude(...)` instance, that's wrong — item access only applies to the legacy `init_latitude(...)` dict return value.
 - [ ] Short-lived processes call `flush()` / `shutdown()` (or provider `forceFlush()`).
