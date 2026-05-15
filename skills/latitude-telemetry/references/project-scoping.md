@@ -29,21 +29,21 @@ Highest wins. A span with no slug at any level **and** no header default is reje
 ## TypeScript
 
 ```typescript
-import { Latitude, capture } from "@latitude-data/telemetry";
 import OpenAI from "openai";
+import { Latitude, capture } from "@latitude-data/telemetry";
 
 const latitude = new Latitude({
   apiKey: process.env.LATITUDE_API_KEY!,
   projectSlug: process.env.LATITUDE_PROJECT_SLUG!, // default for spans without a per-capture override
-  instrumentations: ["openai"],
+  instrumentations: { openai: OpenAI },
 });
 
 await latitude.ready;
-const openai = new OpenAI();
+const client = new OpenAI();
 
 // Inherits the constructor's projectSlug.
 await capture("default-route", async () => {
-  await openai.chat.completions.create({
+  await client.chat.completions.create({
     model: "gpt-4o-mini",
     messages: [{ role: "user", content: "Hi" }],
   });
@@ -53,7 +53,7 @@ await capture("default-route", async () => {
 await capture(
   "evaluation-batch",
   async () => {
-    await openai.chat.completions.create({
+    await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: "Evaluate this output." }],
     });

@@ -19,13 +19,32 @@ Install Latitude LLM observability into a user's codebase **correctly the first 
 
 **Rule 5 — Never write credential values to `.env` (or any secrets file) yourself.** The user must paste the API key and project slug into the file with their own hands. You do not have a way to know whether the values you'd write are real — past runs of this skill have invented plausible-looking but fake keys (`lat_sk_...`, `proj_abc123`) and saved them to `.env`, so the install "completed" but no traces ever flowed. Even if the user pastes a value into the chat, **do not transcribe it into `.env`** — show them the exact line to add and have them write it themselves. You may create or edit `.env.example` with empty placeholders (`LATITUDE_API_KEY=`, `LATITUDE_PROJECT_SLUG=`) and you may confirm `.env` is in `.gitignore`, but the real values are user-write-only.
 
+**Rule 6 — TypeScript only: any existing install below `3.0.0-alpha.11` MUST be upgraded and migrated to the object-form `instrumentations` before you touch anything else.** The string-array form was removed in `3.0.0-alpha.11` (`@latitude-data/telemetry`); on `alpha.11`+, passing any string array (or any non-object value) **throws at register time**. This is not optional and not skippable — even if the user only asked you to "add a new instrumentation" or "fix unrelated tracing", you must perform the upgrade + migration first or the app's bootstrap will throw. **Concrete migration:**
+
+```diff
+- instrumentations: ["openai"]
++ // Add the import at the top of the file if not already there:
++ // import OpenAI from "openai"
++ instrumentations: { openai: OpenAI }
+```
+
+Detection and forced action — when you see any `@latitude-data/telemetry` install:
+
+1. **Read the installed version** from the user's `package.json` / lockfile. If it's `< 3.0.0-alpha.11`, you MUST upgrade (Step 2 below) before adding or changing any telemetry code.
+2. **Grep the codebase for `instrumentations: [` and `instrumentations: ["`** — every match is a code-smell that throws on `alpha.11`+. Rewrite each one to the object form. For non-`openai` integrations the right-hand side is a namespace import (`import * as AnthropicSDK from "@anthropic-ai/sdk"`) — see the per-SDK table in Step 3d. For `anthropic` specifically, the bare default class also works (the SDK rewraps it), but the namespace form is the recommended shape.
+3. **Verify all call sites compile** before reporting done. A leftover string-array somewhere else in the codebase will throw at runtime and look like a totally unrelated bug.
+
+Skipping this rule is the #1 failure mode for any upgrade interaction in `alpha.11`+: the agent installs the new version, leaves the old call shape, the bootstrap throws, no traces flow, the user blames "the upgrade broke everything." Source: TypeScript SDK CHANGELOG for `3.0.0-alpha.11` and PR LAT-581.
+
+**Python does not have this rule** — Python kept the string-identifier API.
+
 Concretely for Rule 1:
 
 - ✅ `capture("handle-chat", () => openai.chat.completions.create(...))` — the OpenAI auto-instrumentation creates the span; `capture` decorates it.
 - ❌ `capture("compute-prompt", () => buildPromptString(...))` — no LLM call inside, no span, no trace.
 - ❌ Wrapping the whole HTTP server `register` callback — telemetry has not started yet.
 
-If the user reports "no traces appear," 90% of the time the `capture()` callback does not invoke an auto-instrumented LLM SDK, **or** Rule 2 was skipped (TS), **or** the version pinned by Rule 3 has drifted from what the install code expects. Verify those three before debugging anything else.
+If the user reports "no traces appear," 90% of the time the `capture()` callback does not invoke an auto-instrumented LLM SDK, **or** Rule 2 was skipped (TS), **or** the version pinned by Rule 3 has drifted from what the install code expects, **or** Rule 6 was skipped — a leftover `instrumentations: ["openai"]` is throwing at register time on `alpha.11`+ and nothing downstream of bootstrap runs. Verify those four before debugging anything else.
 
 ## Workflow
 
@@ -158,6 +177,61 @@ After install, confirm the user's lockfile (`package-lock.json` / `pnpm-lock.yam
 
 If the user's CI later picks a newer version with a different API, the next debug session starts with `npm view @latitude-data/telemetry@alpha version` to confirm the drift — make sure they know.
 
+#### Upgrading an existing TypeScript install (MANDATORY when current version < `3.0.0-alpha.11`)
+
+This sub-step exists to enforce **Rule 6** from the top of the skill — read that rule first if you haven't already.
+
+If the codebase already has `@latitude-data/telemetry` listed in `package.json` and the version is below `3.0.0-alpha.11`, treat this as a forced-migration job before doing anything else the user asked for. The upgrade is breaking; on `alpha.11`+ the SDK throws at register time when `instrumentations` is anything other than a plain object, so leaving the old call shape in place will break the user's app the moment they install the new version.
+
+Workflow (do not skip steps):
+
+1. **Read the currently installed version** from `package.json` and (authoritatively) the lockfile. Example commands:
+
+   ```bash
+   # Quick read — works for any package manager
+   cat package.json | jq -r '.dependencies["@latitude-data/telemetry"] // .devDependencies["@latitude-data/telemetry"]'
+
+   # Authoritative — lockfile reflects what's actually installed
+   pnpm why @latitude-data/telemetry      # or `npm ls @latitude-data/telemetry`, `yarn why ...`, `bun pm ls`
+   ```
+
+   If the version starts with `3.0.0-alpha.` and the number after the dot is `<= 10`, you are in the breaking-change zone.
+
+2. **Grep the codebase for every call site that needs migration.** Run all of these — silent misses here become "the upgrade broke everything" bug reports:
+
+   ```bash
+   # Find every string-array form. Each match is a forced rewrite.
+   rg -n 'instrumentations:\s*\[' .
+
+   # Find every legacy `modules:` option on registerLatitudeInstrumentations.
+   # `modules` was removed in alpha.11; pass the SDK module via `instrumentations` instead.
+   rg -n 'registerLatitudeInstrumentations' -A 6 . | rg -n 'modules\s*:'
+   ```
+
+3. **Rewrite every match to the object form.** The minimal mechanical transformation for each integration:
+
+   ```diff
+   - import { Latitude } from "@latitude-data/telemetry";
+   + import OpenAI from "openai";                              // single SDK
+   + import * as AnthropicSDK from "@anthropic-ai/sdk";        // namespace for SDKs that need it
+   + import { Latitude } from "@latitude-data/telemetry";
+
+     new Latitude({
+       apiKey: process.env.LATITUDE_API_KEY!,
+       projectSlug: process.env.LATITUDE_PROJECT_SLUG!,
+   -   instrumentations: ["openai", "anthropic"],
+   +   instrumentations: { openai: OpenAI, anthropic: AnthropicSDK },
+     });
+   ```
+
+   Per-SDK module shapes are in Step 3d below — read that table when in doubt, especially for `anthropic` (Traceloop reads `module.Anthropic.Messages.prototype`; the namespace import is the recommended form), `bedrock`, `langchain`, `llamaindex`, `togetherai`, `vertexai`, `aiplatform`, and `openai-agents`. `openai` accepts either the default-export class or the namespace.
+
+4. **Bump the version pin** to the latest alpha (Step 2 above) — `3.0.0-alpha.11` at minimum.
+
+5. **Verify compile + bootstrap**: run `tsc --noEmit` / the project's typecheck script, then start the app once and watch for any runtime `TypeError: [Latitude] instrumentations must be an object mapping…` — that's the bootstrap throwing because you missed a call site.
+
+If you're tempted to "leave the old version in place and just add the new instrumentation the user asked for", **don't**. The user will install the new version eventually (CI, Renovate, manual `pnpm up`) and the app will throw at startup. Migrate now while you have full context.
+
 ### Step 3 — Discover the codebase
 
 Before deciding which install path to use, gather these facts. Read code and grep — only ask the user when the codebase truly cannot answer.
@@ -208,22 +282,22 @@ Special cases:
 
 #### 3d. Which LLM SDKs are in use
 
-Grep imports for the supported instrumentations. The result drives the `instrumentations` array.
+Grep imports for the supported instrumentations. In TypeScript, the result drives an `instrumentations: { <name>: <module> }` object; in Python the result drives an `instrumentations: ["..."]` list (Python keeps the string-identifier API).
 
-| If you see in code | Add to `instrumentations` |
-| --- | --- |
-| `import OpenAI from "openai"` / `from openai import OpenAI` | `"openai"` (also covers `AzureOpenAI` from the same `openai` package) |
-| `@anthropic-ai/sdk` / `anthropic` | `"anthropic"` |
-| `@aws-sdk/client-bedrock-runtime` (TS) / `boto3` Bedrock client (Py) | `"bedrock"` |
-| `cohere-ai` (TS) / `cohere` (Py) | `"cohere"` |
-| `together-ai` (TS) / `together` (Py) | `"togetherai"` |
-| `@google-cloud/vertexai` (TS) / `google-cloud-aiplatform` (Py) | `"vertexai"` |
-| `@google-cloud/aiplatform` (TS) / `google-cloud-aiplatform` (Py) | `"aiplatform"` |
-| `langchain`, `@langchain/*` (TS) / `langchain-core` (Py) | `"langchain"` |
-| `llamaindex` (TS) / `llama-index` (Py) | `"llamaindex"` |
-| `ai` (Vercel AI SDK) | **none** — see special case below |
-| `@mastra/core` (Mastra) | **none** — TypeScript-only special case; do not install `@latitude-data/telemetry` at all. See special case below |
-| `@openai/agents` (OpenAI Agents SDK) | `"openai-agents"` — has its own dedicated instrumentation; do NOT use `"openai"` for this. See [docs.latitude.so/telemetry/frameworks/openai-agents](https://docs.latitude.so/telemetry/frameworks/openai-agents) |
+| If you see in code | TypeScript entry | Python identifier |
+| --- | --- | --- |
+| `import OpenAI from "openai"` / `from openai import OpenAI` | `openai: OpenAI` (covers `AzureOpenAI` from the same package) | `"openai"` |
+| `@anthropic-ai/sdk` / `anthropic` | `anthropic: AnthropicSDK` — pass `import * as AnthropicSDK from "@anthropic-ai/sdk"` | `"anthropic"` |
+| `@aws-sdk/client-bedrock-runtime` (TS) / `boto3` Bedrock client (Py) | `bedrock: BedrockNS` | `"bedrock"` |
+| `cohere-ai` (TS) / `cohere` (Py) | `cohere: CohereNS` | `"cohere"` |
+| `together-ai` (TS) / `together` (Py) | `togetherai: TogetherNS` | `"togetherai"` |
+| `@google-cloud/vertexai` (TS) / `google-cloud-aiplatform` (Py) | `vertexai: VertexAINS` | `"vertexai"` |
+| `@google-cloud/aiplatform` (TS) / `google-cloud-aiplatform` (Py) | `aiplatform: AIPlatformNS` | `"aiplatform"` |
+| `langchain`, `@langchain/*` (TS) / `langchain-core` (Py) | `langchain: LangChainNS` | `"langchain"` |
+| `llamaindex` (TS) / `llama-index` (Py) | `llamaindex: LlamaIndexNS` | `"llamaindex"` |
+| `ai` (Vercel AI SDK) | **none** — see special case below | n/a |
+| `@mastra/core` (Mastra) | **none** — TypeScript-only special case; do not install `@latitude-data/telemetry` at all. See special case below | n/a |
+| `@openai/agents` (OpenAI Agents SDK) | `"openai-agents": OpenAIAgentsNS` — has its own dedicated instrumentation; do NOT use the `openai` key for this | `"openai-agents"` |
 
 Special cases:
 
@@ -301,6 +375,24 @@ await capture("generate-support-reply", async () => {
 await latitude.shutdown();
 ```
 
+When the user calls a vendor SDK directly (raw `openai`, `@anthropic-ai/sdk`, …), pass the LLM SDK modules through the `instrumentations` **object** — keys are integration names, values are the SDK modules the consumer imports:
+
+```typescript
+import OpenAI from "openai";
+import * as AnthropicSDK from "@anthropic-ai/sdk";
+import { Latitude } from "@latitude-data/telemetry";
+
+const latitude = new Latitude({
+  apiKey: process.env.LATITUDE_API_KEY!,
+  projectSlug: process.env.LATITUDE_PROJECT_SLUG!,
+  instrumentations: { openai: OpenAI, anthropic: AnthropicSDK },
+});
+
+await latitude.ready;
+```
+
+**Anthropic specifically requires the namespace import** (`import * as AnthropicSDK from "@anthropic-ai/sdk"`) — the underlying patch reads `module.Anthropic.Messages.prototype`. The legacy `instrumentations: ["openai"]` string-array form is **removed with no fallback in `3.0.0-alpha.11`+** and throws at register time; if you see it in a codebase, migrate it before doing anything else. See the per-SDK table below for what each key expects.
+
 The only times you should put init in a separate file are framework-mandated bootstrap files that **already exist** (e.g. Next.js `instrumentation.ts`, NestJS `main.ts`, an existing `server.ts` / `index.ts`). Even then: edit the existing file, do not create a wrapper module around the constructor.
 
 Common locations by stack:
@@ -315,7 +407,7 @@ Common locations by stack:
 | Python Celery | worker `__init__` or `worker_process_init` signal |
 | CLI / one-shot script | very top of the entrypoint, before any LLM client import |
 
-For TypeScript, **import order matters**. Telemetry imports first, then the LLM SDK. If the bundler reshuffles imports (Next.js, esbuild with certain settings), pass `modules` to `registerLatitudeInstrumentations` (see [references/typescript.md](references/typescript.md)).
+For TypeScript, **import order matters**. Telemetry imports first, then the LLM SDK. The object-form `instrumentations` (`{ openai: OpenAI, … }`) is also the answer to bundler-related "no spans appear" bugs — it makes the consumer-side module reference explicit so Next.js / esbuild can't strip a dynamic `require` (see [references/typescript.md](references/typescript.md)).
 
 #### Python: drop the dict-access idiom
 
@@ -354,7 +446,7 @@ Do not declare success based on "the code compiles." Verify a trace lands in Lat
    - Re-check `LATITUDE_API_KEY` and `LATITUDE_PROJECT_SLUG`.
    - Re-check the version pin from Step 2 — running `npm view @latitude-data/telemetry@alpha version` again should match what's installed; if it's higher, the alpha tag has moved and the install needs an update.
    - Re-check that the `instrumentations` array includes the SDK actually being called.
-   - For TypeScript: pass `modules: { openai: OpenAI }` (or matching vendor) to `registerLatitudeInstrumentations` — bundler-resolved module instances may not match the SDK's auto-`require`.
+   - **For TypeScript on `3.0.0-alpha.11`+: confirm the bootstrap did not throw a migration error from `instrumentations: ["openai"]` or any non-object form.** That form is removed; the SDK throws at register time. Migrate to `instrumentations: { openai: OpenAI }` (or the matching key).
    - For short-lived processes: ensure `await latitude.shutdown()` (or `latitude.flush()`) runs before exit.
    - Check whether the smart filter is dropping spans (`disableSmartFilter` for diagnostic runs).
 
@@ -386,7 +478,7 @@ If the README and this skill disagree, **the README wins**. Offer to update this
 
 | Situation | Open |
 | --- | --- |
-| TypeScript / Node specifics, ESM gotchas, `modules` option, per-SDK notes, Next.js | [references/typescript.md](references/typescript.md) |
+| TypeScript / Node specifics, ESM gotchas, `instrumentations` object, per-SDK notes, Next.js | [references/typescript.md](references/typescript.md) |
 | Python specifics | [references/python.md](references/python.md) |
 | Multi-project apps (per-capture `projectSlug`, resource attribute, bare-OTel routing) | [references/project-scoping.md](references/project-scoping.md) |
 | Non-TS/Python codebases (Go, Java, Ruby, .NET, PHP, Rust, Elixir, …) | [references/otlp-fallback.md](references/otlp-fallback.md) |
@@ -421,7 +513,8 @@ Other package managers translate the exact-version pin the same way: `pnpm add @
 | Script exits before flush | Buffered batches dropped | `await latitude.shutdown()` (TS) or `latitude.shutdown()` (Py) |
 | Two OTel `TracerProvider` instances | Spans split across providers | Pass the existing provider to `new Latitude({ tracerProvider })` |
 | Edge runtime on Next.js | OTel exporters/patches assume Node | Force `runtime = "nodejs"` on the route |
-| Bundler resolves a different `openai` module | Auto-require patches the wrong instance | Pass explicit `modules: { openai: OpenAI }` to `registerLatitudeInstrumentations` |
+| Bootstrap throws "instrumentations must be an object mapping…" | Codebase is on the removed string-array form (or some other non-object value) | Migrate to the object form: `instrumentations: { openai: OpenAI }`. |
+| No LLM-instrumentation child spans appear under a `capture()` envelope | The user is calling an LLM SDK instance that does not match the module passed via `instrumentations` (e.g. two `openai` resolutions from different node_modules paths) | Make sure the module value on `instrumentations` is the same one the LLM client is instantiated from. In a monorepo, ensure the package isn't deduped to a second copy. |
 
 ## Skill maintenance
 

@@ -19,9 +19,17 @@ Use when reviewing an existing integration or a pull request that touches observ
 - [ ] `LATITUDE_PROJECT_SLUG` is set in env when the app uses one project; for multi-project apps, every `capture()` either sets its own `projectSlug` or relies on an OTEL resource attribute (see [project-scoping.md](project-scoping.md)).
 - [ ] LLM client imports occur **after** telemetry bootstrap when patch-based auto-instrumentation requires it.
 - [ ] **TypeScript**: `await latitude.ready` is called before the first LLM call.
-- [ ] **TypeScript**: `instrumentations` includes every vendor SDK actually used; if spans are missing despite installs, verify explicit **`modules`** (imported client classes) on `registerLatitudeInstrumentations` per [typescript.md](typescript.md).
-- [ ] **Python**: `instrumentations` list includes every vendor SDK actually used (OpenAI, Anthropic, and so on).
-- [ ] **Vercel AI SDK** code is NOT also registered via `instrumentations: ["openai"]`; it uses `experimental_telemetry: { isEnabled: true }` per call instead.
+- [ ] **TypeScript — `instrumentations` shape is post-`alpha.11`.** The value MUST be a plain object mapping integration names to LLM SDK modules — e.g. `{ openai: OpenAI, anthropic: AnthropicSDK }`. The bare string-array form (`instrumentations: ["openai"]`) is **removed in `3.0.0-alpha.11`+** and throws at register time. Mechanical rewrite:
+
+  ```diff
+  - instrumentations: ["openai"]
+  + // ensure `import OpenAI from "openai"` is at the top
+  + instrumentations: { openai: OpenAI }
+  ```
+
+  If the installed version is `< 3.0.0-alpha.11`, this is also an upgrade gate — bump the pin AND migrate every `instrumentations: [...]` call site in the same PR (see SKILL.md Rule 6 and Step 2's "Upgrading an existing TypeScript install" sub-section). Leaving the old call shape with the new version will throw at bootstrap; leaving the old version pinned silently fails the day Renovate or CI bumps it.
+- [ ] **Python**: `instrumentations` list includes every vendor SDK actually used (OpenAI, Anthropic, and so on). Python keeps the string-identifier API; only TypeScript moved to the object form.
+- [ ] **Vercel AI SDK** code is NOT also registered via an `instrumentations` entry like `openai: OpenAI`; it uses `experimental_telemetry: { isEnabled: true }` per call instead.
 - [ ] **Python class API**: `latitude.flush()` / `latitude.shutdown()` (attribute access). If code calls `latitude["flush"]()` on a `Latitude(...)` instance, that's wrong — item access only applies to the legacy `init_latitude(...)` dict return value.
 - [ ] Short-lived processes call `flush()` / `shutdown()` (or provider `forceFlush()`).
 
