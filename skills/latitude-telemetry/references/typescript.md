@@ -2,7 +2,7 @@
 
 Concise reference for `@latitude-data/telemetry`. Always confirm details against the [upstream TypeScript README](https://raw.githubusercontent.com/latitude-dev/latitude-llm/main/packages/telemetry/typescript/README.md).
 
-The product docs at [Latitude — Developers overview](https://docs.latitude.so/developers/overview) describe the same mental model (install → bootstrap telemetry → wrap work in `capture()`), but API names may differ from this package (for example `LatitudeTelemetry` vs `initLatitude`, or `projectId` / `path` vs `projectSlug` and `capture(name, …)`).
+The product docs at [Latitude — Developers overview](https://docs.latitude.so/developers/overview) describe the same mental model (install → bootstrap telemetry → wrap work in `capture()`), but API names may differ from this package (for example `LatitudeTelemetry` vs `initLatitude`, or `projectId` / `path` vs `project` and `capture(name, …)`).
 
 ## Install
 
@@ -34,7 +34,7 @@ import { openai } from "@ai-sdk/openai";
 
 const latitude = new Latitude({
   apiKey: process.env.LATITUDE_API_KEY!,
-  projectSlug: process.env.LATITUDE_PROJECT_SLUG!,
+  project: process.env.LATITUDE_PROJECT_SLUG!,
 });
 
 await latitude.ready; // REQUIRED — never skip this
@@ -55,9 +55,11 @@ When using a non-AI-SDK vendor (raw `openai`, `@anthropic-ai/sdk`, …), pass th
 
 `await latitude.ready` is **required, not optional.** `new Latitude({...})` returns immediately and patches run in the background; without `await latitude.ready`, the first LLM call can fire before the patch lands and the trace is silently lost. Past installs by this skill have shipped without it and produced empty trace lists. If you find yourself tempted to skip it, stop — there is no scenario in this skill where omitting it is correct.
 
-### `projectSlug` is optional on the constructor
+### `project` is optional on the constructor
 
-If your app emits to several Latitude projects (multi-agent, multi-feature), omit `projectSlug` from the constructor and pass it on each `capture()` call instead. See [project-scoping.md](project-scoping.md) for the full pattern and precedence rules. For single-project apps, keep `projectSlug` in the constructor — it's the simpler shape.
+If your app emits to several Latitude projects (multi-agent, multi-feature), omit `project` from the constructor and pass it on each `capture()` call instead. See [project-scoping.md](project-scoping.md) for the full pattern and precedence rules. For single-project apps, keep `project` in the constructor — it's the simpler shape.
+
+> The constructor option was renamed from `projectSlug` to `project` in `@latitude-data/telemetry` ≥ `3.0.0-alpha.12`. `projectSlug` still works but logs a one-time deprecation warning; new code should use `project`.
 
 ### Legacy `initLatitude`
 
@@ -74,7 +76,7 @@ import { Latitude } from "@latitude-data/telemetry";
 
 const latitude = new Latitude({
   apiKey: process.env.LATITUDE_API_KEY!,
-  projectSlug: process.env.LATITUDE_PROJECT_SLUG!,
+  project: process.env.LATITUDE_PROJECT_SLUG!,
   instrumentations: { openai: OpenAI, anthropic: AnthropicSDK },
 });
 
@@ -109,7 +111,7 @@ Any time you touch a codebase that has `@latitude-data/telemetry` installed, run
 
      new Latitude({
        apiKey: process.env.LATITUDE_API_KEY!,
-       projectSlug: process.env.LATITUDE_PROJECT_SLUG!,
+       project: process.env.LATITUDE_PROJECT_SLUG!,
    -   instrumentations: ["openai", "anthropic"],
    +   instrumentations: { openai: OpenAI, anthropic: AnthropicSDK },
      });
@@ -137,7 +139,7 @@ sdk.start();
 
 const latitude = new Latitude({
   apiKey: process.env.LATITUDE_API_KEY!,
-  projectSlug: process.env.LATITUDE_PROJECT_SLUG!,
+  project: process.env.LATITUDE_PROJECT_SLUG!,
   instrumentations: { openai: OpenAI },
   tracerProvider: sdk.getTracerProvider(),
 });
@@ -156,7 +158,7 @@ import {
   registerLatitudeInstrumentations,
 } from "@latitude-data/telemetry";
 
-provider.addSpanProcessor(new LatitudeSpanProcessor(apiKey, projectSlug));
+provider.addSpanProcessor(new LatitudeSpanProcessor(apiKey, project));
 
 await registerLatitudeInstrumentations({
   instrumentations: { openai: OpenAI },
@@ -188,14 +190,14 @@ await capture(
     metadata: { requestId: "req-xyz" },
     // Optional — routes this capture (and its children) to a different Latitude
     // project than the constructor's default. See project-scoping.md.
-    // projectSlug: "evaluation-runs",
+    // project: "evaluation-runs",
   },
 );
 
 await latitude.shutdown();
 ```
 
-For the multi-project pattern (per-capture `projectSlug` override, OTEL resource attribute alternative, bare-OTel routing), see [project-scoping.md](project-scoping.md).
+For the multi-project pattern (per-capture `project` override, OTEL resource attribute alternative, bare-OTel routing), see [project-scoping.md](project-scoping.md).
 
 ## Public surface (import map)
 
@@ -248,7 +250,7 @@ import { generateText } from "ai";
 
 const latitude = new Latitude({
   apiKey: process.env.LATITUDE_API_KEY!,
-  projectSlug: process.env.LATITUDE_PROJECT_SLUG!,
+  project: process.env.LATITUDE_PROJECT_SLUG!,
   // No instrumentations array — the AI SDK provides its own OTel spans.
 });
 

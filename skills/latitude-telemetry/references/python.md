@@ -35,7 +35,7 @@ from latitude_telemetry import Latitude, capture
 
 latitude = Latitude(
     api_key=os.environ["LATITUDE_API_KEY"],
-    project_slug=os.environ["LATITUDE_PROJECT_SLUG"],
+    project=os.environ["LATITUDE_PROJECT_SLUG"],
     instrumentations={"openai": openai},
 )
 
@@ -52,9 +52,11 @@ Real attributes and methods — no dict access:
 - `latitude.flush()` — force a flush of pending spans (use in serverless handlers before returning).
 - `latitude.shutdown()` — flush and tear down. Call before a CLI / script exits.
 
-### `project_slug` is optional on the constructor
+### `project` is optional on the constructor
 
-If your app emits to several Latitude projects (multi-agent, multi-feature), omit `project_slug` from the constructor and pass it on each `capture()` instead. See [project-scoping.md](project-scoping.md) for the full pattern and precedence rules. For single-project apps, keep `project_slug` in the constructor.
+If your app emits to several Latitude projects (multi-agent, multi-feature), omit `project` from the constructor and pass it on each `capture()` instead. See [project-scoping.md](project-scoping.md) for the full pattern and precedence rules. For single-project apps, keep `project` in the constructor.
+
+> The constructor option was renamed from `project_slug` to `project` in `latitude-telemetry` ≥ `3.0.0a8`. `project_slug` still works but logs a one-time deprecation warning; new code should use `project`.
 
 ### Legacy `init_latitude`
 
@@ -78,7 +80,7 @@ When you see `@latitude-data/telemetry`'s Python package (`latitude-telemetry`) 
 
      latitude = Latitude(
          api_key=os.environ["LATITUDE_API_KEY"],
-         project_slug=os.environ["LATITUDE_PROJECT_SLUG"],
+         project=os.environ["LATITUDE_PROJECT_SLUG"],
    -     instrumentations=["openai", "anthropic"],
    +     instrumentations={"openai": openai, "anthropic": anthropic},
      )
@@ -103,7 +105,7 @@ provider = TracerProvider()
 
 latitude = Latitude(
     api_key="api-key",
-    project_slug="project-slug",
+    project="project-slug",
     instrumentations={"openai": openai},
     tracer_provider=provider,
 )
@@ -117,7 +119,7 @@ For the rare case where you want to manage everything yourself, the lower-level 
 import openai
 from latitude_telemetry import LatitudeSpanProcessor, register_latitude_instrumentations
 
-provider.add_span_processor(LatitudeSpanProcessor(api_key="...", project_slug="..."))
+provider.add_span_processor(LatitudeSpanProcessor(api_key="...", project="..."))
 
 register_latitude_instrumentations(
     instrumentations={"openai": openai},
@@ -142,7 +144,7 @@ from latitude_telemetry import Latitude, capture
 
 latitude = Latitude(
     api_key="your-api-key",
-    project_slug="your-project-slug",
+    project="your-project-slug",
     instrumentations={"openai": openai},
 )
 
@@ -154,7 +156,7 @@ latitude = Latitude(
         "user_id": "user_123",
         "metadata": {"request_id": "req-xyz"},
         # Optional — routes this capture to a different Latitude project. See project-scoping.md.
-        # "project_slug": "evaluation-runs",
+        # "project": "evaluation-runs",
     },
 )
 def handle_user_request(user_message: str) -> str:
@@ -185,7 +187,7 @@ result = capture(
 latitude.shutdown()
 ```
 
-`ContextOptions` keys: `name` (optional), `user_id`, `session_id`, `tags`, `metadata`, `project_slug` (optional). Same merge rules as TypeScript: tags merge+dedupe, metadata shallow-merge, ids last-write-wins.
+`ContextOptions` keys: `name` (optional), `user_id`, `session_id`, `tags`, `metadata`, `project` (optional; legacy alias `project_slug` still works with a deprecation warning). Same merge rules as TypeScript: tags merge+dedupe, metadata shallow-merge, ids last-write-wins.
 
 ## Public surface
 
@@ -251,7 +253,7 @@ import agents
 
 latitude = Latitude(
     api_key="your-api-key",
-    project_slug="your-project-slug",
+    project="your-project-slug",
     instrumentations={"openai-agents": agents},
 )
 ```

@@ -16,7 +16,7 @@ Use when reviewing an existing integration or a pull request that touches observ
 ## Correctness
 
 - [ ] `LATITUDE_API_KEY` is read from the environment on the server, not hard-coded.
-- [ ] `LATITUDE_PROJECT_SLUG` is set in env when the app uses one project; for multi-project apps, every `capture()` either sets its own `projectSlug` or relies on an OTEL resource attribute (see [project-scoping.md](project-scoping.md)).
+- [ ] `LATITUDE_PROJECT_SLUG` is set in env when the app uses one project; for multi-project apps, every `capture()` either sets its own `project` (legacy alias `projectSlug` / `project_slug` still works with a deprecation warning) or relies on an OTEL resource attribute (see [project-scoping.md](project-scoping.md)).
 - [ ] LLM client imports occur **after** telemetry bootstrap when patch-based auto-instrumentation requires it.
 - [ ] **TypeScript**: `await latitude.ready` is called before the first LLM call.
 - [ ] **TypeScript — `instrumentations` shape is post-`alpha.11`.** The value MUST be a plain object mapping integration names to LLM SDK modules — e.g. `{ openai: OpenAI, anthropic: AnthropicSDK }`. The bare string-array form (`instrumentations: ["openai"]`) is **removed in `3.0.0-alpha.11`+** and throws at register time. Mechanical rewrite:
@@ -55,8 +55,8 @@ Use when reviewing an existing integration or a pull request that touches observ
 
 ## Multi-project routing (if applicable)
 
-- [ ] Only **one** `Latitude` instance is created per process — even when the app emits to several projects. Two instances will warn about provider attachment and double-process spans; use per-capture `projectSlug` / `project_slug` instead.
-- [ ] Secondary project slugs used in `capture({ projectSlug })` actually exist in the org behind `LATITUDE_API_KEY`. Unknown slugs are silently rejected at ingest (the OTel exporter logs the 400 at `diag.WARN`, but the UI just shows nothing).
+- [ ] Only **one** `Latitude` instance is created per process — even when the app emits to several projects. Two instances will warn about provider attachment and double-process spans; use per-capture `project` (legacy alias `projectSlug` / `project_slug` still works) instead.
+- [ ] Secondary project slugs used in `capture({ project })` actually exist in the org behind `LATITUDE_API_KEY`. Unknown slugs are silently rejected at ingest (the OTel exporter logs the 400 at `diag.WARN`, but the UI just shows nothing).
 - [ ] When using bare OpenTelemetry with the OTEL resource attribute `latitude.project`, the resource is set on the `TracerProvider` (not as a span attribute by mistake — see [project-scoping.md](project-scoping.md)).
 
 ## Observability of the observability

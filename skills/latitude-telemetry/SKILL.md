@@ -1,6 +1,6 @@
 ---
 name: latitude-telemetry
-description: Install or audit Latitude LLM observability — sends traces from LLM SDKs (OpenAI, Anthropic, Bedrock, Cohere, TogetherAI, Vertex AI, Google AI Platform, OpenAI Agents, Vercel AI SDK, Mastra, LangChain, LlamaIndex) to a Latitude project. TypeScript via `@latitude-data/telemetry`, Python via `latitude-telemetry`, and any other OpenTelemetry-supported language (Go, Java, Ruby, .NET, PHP, Rust, Elixir, …) via direct OTLP HTTP. Use when the user asks to add Latitude tracing, wire Latitude into an existing OpenTelemetry setup, fix missing traces in Latitude, or audit an existing integration. Covers codebase discovery (existing OTel, conflicting LLM-observability vendors, which LLM SDKs are in use, where LLM calls happen), class-based bootstrap (`new Latitude({...})` in TS, `Latitude(...)` in Python), advanced setup with `LatitudeSpanProcessor` and `registerLatitudeInstrumentations`, optional `capture()` for user/session/tags context (and per-capture `projectSlug` for multi-project apps), env vars (`LATITUDE_API_KEY`, `LATITUDE_PROJECT_SLUG`), and an OTLP fallback path for non-TS/Python codebases.
+description: Install or audit Latitude LLM observability — sends traces from LLM SDKs (OpenAI, Anthropic, Bedrock, Cohere, TogetherAI, Vertex AI, Google AI Platform, OpenAI Agents, Vercel AI SDK, Mastra, LangChain, LlamaIndex) to a Latitude project. TypeScript via `@latitude-data/telemetry`, Python via `latitude-telemetry`, and any other OpenTelemetry-supported language (Go, Java, Ruby, .NET, PHP, Rust, Elixir, …) via direct OTLP HTTP. Use when the user asks to add Latitude tracing, wire Latitude into an existing OpenTelemetry setup, fix missing traces in Latitude, or audit an existing integration. Covers codebase discovery (existing OTel, conflicting LLM-observability vendors, which LLM SDKs are in use, where LLM calls happen), class-based bootstrap (`new Latitude({...})` in TS, `Latitude(...)` in Python), advanced setup with `LatitudeSpanProcessor` and `registerLatitudeInstrumentations`, optional `capture()` for user/session/tags context (and per-capture `project` for multi-project apps), env vars (`LATITUDE_API_KEY`, `LATITUDE_PROJECT_SLUG`), and an OTLP fallback path for non-TS/Python codebases.
 ---
 
 # Latitude Telemetry
@@ -72,7 +72,9 @@ Latitude needs an API key, and (in the simplest pattern) one project slug. This 
 | `LATITUDE_API_KEY` | yes | [https://console.latitude.so/settings/api-keys](https://console.latitude.so/settings/api-keys) → click **New key** → copy the value (it is shown once). |
 | `LATITUDE_PROJECT_SLUG` | usually yes (see note) | Open the project in the console; the URL is `https://console.latitude.so/projects/<slug>`. The `<slug>` segment is the value. |
 
-**Note on `LATITUDE_PROJECT_SLUG`**: the class-based SDK accepts a constructor without a `projectSlug` / `project_slug` — useful when a single process emits to several Latitude projects and each `capture()` declares its own slug. Default behavior in this skill is still "one project, slug in the constructor" because that covers the vast majority of installs. Switch to the multi-project pattern only if the user explicitly says they want it; see [references/project-scoping.md](references/project-scoping.md).
+**Note on `LATITUDE_PROJECT_SLUG`**: the class-based SDK accepts a constructor without a `project` — useful when a single process emits to several Latitude projects and each `capture()` declares its own slug. Default behavior in this skill is still "one project, slug in the constructor" because that covers the vast majority of installs. Switch to the multi-project pattern only if the user explicitly says they want it; see [references/project-scoping.md](references/project-scoping.md).
+
+> **Upgrading an existing install?** If you find the consumer already uses `@latitude-data/telemetry` < `3.0.0-alpha.12` or `latitude-telemetry` < `3.0.0a8` and you're bumping their version, grep the codebase for `projectSlug` / `project_slug` in `new Latitude({...})`, `Latitude(...)`, `initLatitude(...)`, `init_latitude(...)`, and `capture(...)` calls and rewrite them to `project`. The legacy names still work (with a deprecation warning), but emitting fresh installs on the new name keeps callers off the deprecation log. The `LATITUDE_PROJECT_SLUG` env var name, the `X-Latitude-Project` HTTP header, and the `latitude.project` span attribute are unchanged.
 
 #### 1a. Look in the repo first
 
@@ -231,7 +233,7 @@ Workflow (do not skip steps):
 
      new Latitude({
        apiKey: process.env.LATITUDE_API_KEY!,
-       projectSlug: process.env.LATITUDE_PROJECT_SLUG!,
+       project: process.env.LATITUDE_PROJECT_SLUG!,
    -   instrumentations: ["openai", "anthropic"],
    +   instrumentations: { openai: OpenAI, anthropic: AnthropicSDK },
      });
@@ -316,7 +318,7 @@ Grep imports for the supported instrumentations. **Both SDKs now share the same 
 
 Special cases:
 
-- **Vercel AI SDK (`ai`, `@ai-sdk/openai`, etc.)**: do **not** add an instrumentation entry for it. The AI SDK has native OpenTelemetry support. Initialize Latitude (`new Latitude({ apiKey, projectSlug })`) and pass `experimental_telemetry: { isEnabled: true, metadata: {...} }` on each `generateText` / `streamText` call. Latitude's smart filter picks up the AI SDK's `ai.*` spans automatically. Adding `"openai"` here would not produce extra traces and may cause double-counting.
+- **Vercel AI SDK (`ai`, `@ai-sdk/openai`, etc.)**: do **not** add an instrumentation entry for it. The AI SDK has native OpenTelemetry support. Initialize Latitude (`new Latitude({ apiKey, project })`) and pass `experimental_telemetry: { isEnabled: true, metadata: {...} }` on each `generateText` / `streamText` call. Latitude's smart filter picks up the AI SDK's `ai.*` spans automatically. Adding `"openai"` here would not produce extra traces and may cause double-counting.
 - **Mastra (`@mastra/core`)**: TypeScript only. Mastra ships its own OpenTelemetry pipeline via `@mastra/observability` and `@mastra/otel-exporter`, emitting `gen_ai.*` spans natively. **Do not install `@latitude-data/telemetry`** — the integration is configured entirely through Mastra's `OtelExporter` with a `custom` provider pointed at Latitude's OTLP endpoint and the standard `Authorization` / `X-Latitude-Project` headers. See [references/typescript.md](references/typescript.md#mastra-example-shape) for the full setup. Source: `docs/telemetry/frameworks/mastra.mdx`.
 - **LangChain / LlamaIndex**: register the wrapper instrumentation (`"langchain"` / `"llamaindex"`); you do **not** also need to register the underlying vendor.
 - **Gemini consumer SDK (`@google/generative-ai`)**: not in the supported list. If the app is on Gemini, ask the user whether they can switch to `@google-cloud/aiplatform` / `@google-cloud/vertexai`, or fall back to manual span creation.
@@ -343,9 +345,9 @@ The class-based SDK collapses the old two-path decision into one constructor: `n
 
 ```
 Existing OTel TracerProvider in the codebase?
-├─ Yes (registered globally) → new Latitude({ apiKey, projectSlug, instrumentations }) auto-attaches
-├─ Yes (held in a variable)  → new Latitude({ apiKey, projectSlug, instrumentations, tracerProvider })
-└─ No                         → new Latitude({ apiKey, projectSlug, instrumentations }) creates + registers
+├─ Yes (registered globally) → new Latitude({ apiKey, project, instrumentations }) auto-attaches
+├─ Yes (held in a variable)  → new Latitude({ apiKey, project, instrumentations, tracerProvider })
+└─ No                         → new Latitude({ apiKey, project, instrumentations }) creates + registers
 ```
 
 Conflicting LLM-observability vendor?
@@ -373,7 +375,7 @@ import { openai } from "@ai-sdk/openai";
 
 const latitude = new Latitude({
   apiKey: process.env.LATITUDE_API_KEY!,
-  projectSlug: process.env.LATITUDE_PROJECT_SLUG!,
+  project: process.env.LATITUDE_PROJECT_SLUG!,
 });
 
 await latitude.ready; // REQUIRED — see Rule 2 at top of skill
@@ -399,7 +401,7 @@ import { Latitude } from "@latitude-data/telemetry";
 
 const latitude = new Latitude({
   apiKey: process.env.LATITUDE_API_KEY!,
-  projectSlug: process.env.LATITUDE_PROJECT_SLUG!,
+  project: process.env.LATITUDE_PROJECT_SLUG!,
   instrumentations: { openai: OpenAI, anthropic: AnthropicSDK },
 });
 
@@ -449,7 +451,7 @@ If the user only needs raw spans (no user/session attribution), skip `capture()`
 
 #### Per-capture project override (multi-project apps)
 
-`capture()` accepts an optional `projectSlug` (TS) / `project_slug` (Py) that routes the wrapping span and its children to a specific Latitude project, overriding whatever default the constructor set. This is the right pattern when one process should emit traces to several projects (e.g. multiple agents in the same runtime). Full guidance, the precedence chain, and the bare-OTel resource-attribute alternative live in [references/project-scoping.md](references/project-scoping.md). Do **not** spin up a second `Latitude` instance to reach a second project — use the per-capture override.
+`capture()` accepts an optional `project` (both SDKs; legacy alias `projectSlug` / `project_slug` still works with a deprecation warning) that routes the wrapping span and its children to a specific Latitude project, overriding whatever default the constructor set. This is the right pattern when one process should emit traces to several projects (e.g. multiple agents in the same runtime). Full guidance, the precedence chain, and the bare-OTel resource-attribute alternative live in [references/project-scoping.md](references/project-scoping.md). Do **not** spin up a second `Latitude` instance to reach a second project — use the per-capture override.
 
 ### Step 7 — Verify before reporting done
 
@@ -495,7 +497,7 @@ If the README and this skill disagree, **the README wins**. Offer to update this
 | --- | --- |
 | TypeScript / Node specifics, ESM gotchas, `instrumentations` object, per-SDK notes, Next.js | [references/typescript.md](references/typescript.md) |
 | Python specifics | [references/python.md](references/python.md) |
-| Multi-project apps (per-capture `projectSlug`, resource attribute, bare-OTel routing) | [references/project-scoping.md](references/project-scoping.md) |
+| Multi-project apps (per-capture `project`, resource attribute, bare-OTel routing) | [references/project-scoping.md](references/project-scoping.md) |
 | Non-TS/Python codebases (Go, Java, Ruby, .NET, PHP, Rust, Elixir, …) | [references/otlp-fallback.md](references/otlp-fallback.md) |
 | Auditing an existing integration or a PR | [references/audit-checklist.md](references/audit-checklist.md) |
 
@@ -522,7 +524,7 @@ Other package managers translate the exact-version pin the same way: `pnpm add @
 | `instrumentations: []` while OpenAI is in use | No vendor patched, no spans | Add `"openai"` (or matching vendor) |
 | Adding `"openai"` to `instrumentations` for Vercel AI SDK code | Double-counted spans, confusing traces | The AI SDK has native OTel; just enable `experimental_telemetry: { isEnabled: true }` per call. Do not register `"openai"` for AI SDK paths. |
 | Python: `latitude["shutdown"]()` (item access on the class) | The class has methods, not dict keys — item access fails | Use `latitude.shutdown()` / `latitude.flush()`. Item access is only correct for the legacy `init_latitude(...)` return value, which new installs should avoid. |
-| Two `new Latitude({...})` instances to reach two projects | Second instance warns about provider attachment; double-processes spans | Use one instance + per-capture `projectSlug` override — see [references/project-scoping.md](references/project-scoping.md) |
+| Two `new Latitude({...})` instances to reach two projects | Second instance warns about provider attachment; double-processes spans | Use one instance + per-capture `project` override — see [references/project-scoping.md](references/project-scoping.md) |
 | Hardcoded API key | Leaks in repo, breaks per-env config | Read from `process.env` / `os.environ` |
 | Agent writes the API key / slug to `.env` itself | Agent has no way to know if the value is real; past runs have invented plausible-looking fakes (`lat_sk_...`, `proj_abc123`) and the install silently never produced traces | The user must write `.env` themselves; agent only shows the lines to add and may edit `.env.example` with empty placeholders |
 | Script exits before flush | Buffered batches dropped | `await latitude.shutdown()` (TS) or `latitude.shutdown()` (Py) |
