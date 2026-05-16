@@ -18,6 +18,24 @@ Every span the ingest endpoint accepts is routed to exactly one project. The ser
 
 Highest wins. A span with no slug at any level **and** no header default is rejected by the ingest endpoint with HTTP 400. A span pointing at a slug that does not exist in the org behind the API key is also rejected.
 
+## Make sure the projects exist *before* writing code
+
+Every slug you pass to `capture({ project })` (or set via header / resource attribute) must already exist in the org behind `LATITUDE_API_KEY` — unknown slugs are silently rejected at ingest. So whatever scoping pattern you pick below, the prerequisite is the same: the projects need to be real.
+
+Two ways to get there during the install conversation:
+
+- **Latitude MCP server (recommended for multi-project setups).** Once installed, the MCP lets the agent call `listProjects` to see what's already there and `createProject` to add missing ones — no leaving the editor. Per-client install commands and the create-project workflow are in [mcp-setup.md](mcp-setup.md). Detect the user's client first (Claude Code CLI, Claude Desktop, Cursor, Codex, Gemini CLI, Zed, OpenCode, …) and use the matching install block; don't guess.
+- **Manual creation in the console.** [https://console.latitude.so](https://console.latitude.so) → **New project**, one per slug. The user pastes each slug back into the chat.
+
+Either path is fine. Don't gate the install on MCP — but do recommend it when there are several projects to create, because the alternative is the user click-creating each one and pasting the slug back.
+
+When asking the user how many projects they want, present the trade-off and let them decide — **do not push one option over the other**:
+
+- **One project** fits when the agents are doing *similar work* (e.g. a flaggers system where multiple sub-agents flag content the same way, or a main agent with helpers all aimed at the same outcome). Similar-shaped traces help Latitude's pattern detection and issue search.
+- **Multiple projects** fit when the agents have *very different goals* (e.g. a researcher and a summarizer, a customer chat assistant and a nightly batch job). Mixing very different trace shapes in one project makes pattern detection noisier; splitting keeps each project's signal clean.
+
+If the user is uncertain, repeat the "similar work vs. different goals" framing rather than picking for them.
+
 ## When to use which pattern
 
 | Situation | Pattern |
@@ -158,5 +176,6 @@ A standard OTel exporter will log a partial-success warning at `diag.WARN` level
 
 ## When this skill should stop and ask the user
 
-- The user has not confirmed the secondary project slug(s) exist in their org. Don't guess slugs — ask, or fall back to a verification curl.
+- The user has not confirmed the secondary project slug(s) exist in their org. Don't guess slugs — verify with `listProjects` via the [MCP](mcp-setup.md) if installed, fall back to a verification curl otherwise, or just ask. Offer the MCP install path when several projects still need to be created.
 - The user is unsure whether two features should share one project or split. Project-scoping is a product decision; surface the trade-off rather than picking for them.
+- The MCP `listProjects` call returns a list that doesn't include slugs the user said exist. That usually means the OAuth session bound to the wrong org — surface this and ask before assuming the slugs are gone. (See the wrong-org OAuth pitfall in [mcp-setup.md](mcp-setup.md#pitfalls).)

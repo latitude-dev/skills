@@ -1,6 +1,6 @@
 ---
 name: latitude-telemetry
-description: Install or audit Latitude LLM observability — sends traces from LLM SDKs (OpenAI, Anthropic, Bedrock, Cohere, TogetherAI, Vertex AI, Google AI Platform, OpenAI Agents, Vercel AI SDK, Mastra, LangChain, LlamaIndex) to a Latitude project. TypeScript via `@latitude-data/telemetry`, Python via `latitude-telemetry`, and any other OpenTelemetry-supported language (Go, Java, Ruby, .NET, PHP, Rust, Elixir, …) via direct OTLP HTTP. Use when the user asks to add Latitude tracing, wire Latitude into an existing OpenTelemetry setup, fix missing traces in Latitude, or audit an existing integration. Covers codebase discovery (existing OTel, conflicting LLM-observability vendors, which LLM SDKs are in use, where LLM calls happen), class-based bootstrap (`new Latitude({...})` in TS, `Latitude(...)` in Python), advanced setup with `LatitudeSpanProcessor` and `registerLatitudeInstrumentations`, optional `capture()` for user/session/tags context (and per-capture `project` for multi-project apps), env vars (`LATITUDE_API_KEY`, `LATITUDE_PROJECT_SLUG`), and an OTLP fallback path for non-TS/Python codebases.
+description: Install or audit Latitude LLM observability — sends traces from LLM SDKs (OpenAI, Anthropic, Bedrock, Cohere, TogetherAI, Vertex AI, Google AI Platform, OpenAI Agents, Vercel AI SDK, Mastra, LangChain, LlamaIndex) to a Latitude project. TypeScript via `@latitude-data/telemetry`, Python via `latitude-telemetry`, and any other OpenTelemetry-supported language (Go, Java, Ruby, .NET, PHP, Rust, Elixir, …) via direct OTLP HTTP. Use when the user asks to add Latitude tracing, wire Latitude into an existing OpenTelemetry setup, fix missing traces in Latitude, or audit an existing integration. Covers codebase discovery (existing OTel, conflicting LLM-observability vendors, which LLM SDKs are in use, where LLM calls happen), an onboarding step that decides single vs multi-project routing and optionally installs the Latitude MCP server (per-client commands for Claude Code, Claude Desktop, Cursor, Codex, Gemini CLI, Zed, OpenCode, Antigravity, GitHub Copilot) so the agent can create projects on the user's behalf, class-based bootstrap (`new Latitude({...})` in TS, `Latitude(...)` in Python), advanced setup with `LatitudeSpanProcessor` and `registerLatitudeInstrumentations`, optional `capture()` for user/session/tags context (and per-capture `project` for multi-project apps), env vars (`LATITUDE_API_KEY`, `LATITUDE_PROJECT_SLUG`), and an OTLP fallback path for non-TS/Python codebases.
 ---
 
 # Latitude Telemetry
@@ -15,9 +15,11 @@ Install Latitude LLM observability into a user's codebase **correctly the first 
 
 **Rule 3 — Always look up the latest pre-release version and pin to it.** The SDK is on the `alpha` / `beta` channel and changes frequently; the `@alpha` dist-tag and `--pre` flag both float, which means re-running this skill (or the user's CI) can silently land on a different version with a different API surface. At install time, run the lookup command (Step 2 below) to find the current latest, and pin the install to that exact version. Update the user's lockfile so the version is captured. Do not skip this — half the "the docs say X but my code says Y" bug reports trace back to a floating pre-release tag landing on an older version than the skill expects.
 
-**Rule 4 — Never silently fall through on missing env vars.** When `LATITUDE_API_KEY` is missing (or set to a placeholder like `your-api-key`, `xxx`, `<replace-me>`), surface the gap to the user with explicit ❌ markers — never just continue. See Step 1a / 1b for the exact checklist format. The user must see at a glance which variables are missing and where to add them. (`LATITUDE_PROJECT_SLUG` is **optional** under the class-based SDK — see Step 1 — but if the user is on the single-project pattern they still need it. Treat it as required unless you've confirmed they need the per-capture override pattern.)
+**Rule 4 — Never silently fall through on missing env vars.** When `LATITUDE_API_KEY` is missing (or set to a placeholder like `your-api-key`, `xxx`, `<replace-me>`), surface the gap to the user with explicit ❌ markers — never just continue. See Step 1b / 1c for the exact checklist format. The user must see at a glance which variables are missing and where to add them. (`LATITUDE_PROJECT_SLUG` is **optional** under the class-based SDK — see Step 1 — but if the user is on the single-project pattern they still need it. Treat it as required unless you've confirmed they need the per-capture override pattern.)
 
-**Rule 5 — Never write credential values to `.env` (or any secrets file) yourself.** The user must paste the API key and project slug into the file with their own hands. You do not have a way to know whether the values you'd write are real — past runs of this skill have invented plausible-looking but fake keys (`lat_sk_...`, `proj_abc123`) and saved them to `.env`, so the install "completed" but no traces ever flowed. Even if the user pastes a value into the chat, **do not transcribe it into `.env`** — show them the exact line to add and have them write it themselves. You may create or edit `.env.example` with empty placeholders (`LATITUDE_API_KEY=`, `LATITUDE_PROJECT_SLUG=`) and you may confirm `.env` is in `.gitignore`, but the real values are user-write-only.
+**Rule 5 — Never write credential values to `.env` (or any secrets file) yourself, unless the value came from a Latitude MCP call in this conversation AND the user explicitly authorized the write.** The default stance is unchanged: the user must paste the API key and project slug into the file with their own hands. You do not have a way to know whether the values you'd write are real — past runs of this skill have invented plausible-looking but fake keys (`lat_sk_...`, `proj_abc123`) and saved them to `.env`, so the install "completed" but no traces ever flowed. Even if the user pastes a value into the chat, **do not transcribe it into `.env`** — show them the exact line to add and have them write it themselves. You may always create or edit `.env.example` with empty placeholders (`LATITUDE_API_KEY=`, `LATITUDE_PROJECT_SLUG=`) and confirm `.env` is in `.gitignore`.
+
+*MCP exception (opt-in, per-value).* When the user has installed the Latitude MCP (see [references/mcp-setup.md](references/mcp-setup.md)) and the value came from `createApiKey` or `createProject` you just called in this conversation, the value is verifiably real — you didn't invent it, the API just generated it. In that case, you **may** write it to `.env`, but **only after asking the user in the chat which they prefer** (auto-write vs. paste-yourself) and getting an explicit "yes, write it" for that specific value. Echo the file path you wrote to so the user can audit. Never bundle multiple secrets into one approval — confirm each one individually. If the value came from `listApiKeys`, `listProjects`, or any other read endpoint (i.e. you did not just create it), you cannot retrieve the secret — those tools return metadata only, so the auto-write path doesn't apply and the user must paste.
 
 **Rule 6 — Any existing install below the object-form cutoff MUST be upgraded and migrated to the object-form `instrumentations` before you touch anything else.** Both SDKs removed the legacy string-list form with no fallback:
 
@@ -72,11 +74,52 @@ Latitude needs an API key, and (in the simplest pattern) one project slug. This 
 | `LATITUDE_API_KEY` | yes | [https://console.latitude.so/settings/api-keys](https://console.latitude.so/settings/api-keys) → click **New key** → copy the value (it is shown once). |
 | `LATITUDE_PROJECT_SLUG` | usually yes (see note) | Open the project in the console; the URL is `https://console.latitude.so/projects/<slug>`. The `<slug>` segment is the value. |
 
-**Note on `LATITUDE_PROJECT_SLUG`**: the class-based SDK accepts a constructor without a `project` — useful when a single process emits to several Latitude projects and each `capture()` declares its own slug. Default behavior in this skill is still "one project, slug in the constructor" because that covers the vast majority of installs. Switch to the multi-project pattern only if the user explicitly says they want it; see [references/project-scoping.md](references/project-scoping.md).
+**Note on `LATITUDE_PROJECT_SLUG`**: the class-based SDK accepts a constructor without a `project` — useful when a single process emits to several Latitude projects and each `capture()` declares its own slug. Default behavior in this skill is still "one project, slug in the constructor" because that covers the vast majority of installs. Whether this app needs one project or several is decided in **1a** below before any slug is gathered; see also [references/project-scoping.md](references/project-scoping.md) for the routing details.
 
 > **Upgrading an existing install?** If you find the consumer already uses `@latitude-data/telemetry` < `3.0.0-alpha.12` or `latitude-telemetry` < `3.0.0a8` and you're bumping their version, grep the codebase for `projectSlug` / `project_slug` in `new Latitude({...})`, `Latitude(...)`, `initLatitude(...)`, `init_latitude(...)`, and `capture(...)` calls and rewrite them to `project`. The legacy names still work (with a deprecation warning), but emitting fresh installs on the new name keeps callers off the deprecation log. The `LATITUDE_PROJECT_SLUG` env var name, the `X-Latitude-Project` HTTP header, and the `latitude.project` span attribute are unchanged.
 
-#### 1a. Look in the repo first
+#### 1a. Decide how many Latitude projects this app needs
+
+This is the friendliest step of the install — open it as a quick conversation, not an interrogation. The point is to figure out, **before** asking the user to dig up slugs, whether this codebase wants one Latitude project (the common case) or several (one per agent / feature / boundary).
+
+**Run a quick scan first.** Don't ask blind. Cheap signals that suggest multi-project may be a fit:
+
+- Several distinct files or directories that each call an LLM SDK in different ways (e.g. `agents/researcher.ts`, `agents/summarizer.ts`, `agents/scheduler.ts` — multiple named agents).
+- Framework-level multi-agent patterns: Mastra `Agent` definitions, LangChain `AgentExecutor` instances, LlamaIndex agents, OpenAI Agents SDK agents, CrewAI crews, DSPy modules.
+- A clear split between background jobs and user-facing routes that each touch LLMs (e.g. `routes/chat.ts` plus `workers/nightly-batch.ts`).
+- The user's framing in their original ask mentions multiple agents, multiple products, or "I want to separate X from Y".
+
+If the scan turns up only one clear LLM call site (or one obvious agent loop), default to **single project** and don't dwell — most installs are single-project. Note the default in your reply so the user can redirect if they wanted multi.
+
+**If the scan turns up multiple distinct LLM-using areas, surface the choice.** Be welcoming and collaborative. Present the trade-off neutrally and let the user decide — **do not push one option over the other**. Adapt this template to what you actually found in the code:
+
+> I see this app has [a researcher agent in `agents/researcher.ts` and a summarizer agent in `agents/summarizer.ts`]. You have two ways to organize traces in Latitude:
+>
+> - **One project for everything.** Good fit when your agents are doing *similar work* — e.g. a flaggers system where several sub-agents all flag content the same way, or one main agent with helpers all aimed at the same outcome. Less to manage, and similar-shaped traces let Latitude's pattern detection and issue search work sharper.
+> - **A project per agent / feature.** Good fit when your agents have *very different goals* — e.g. a researcher and a summarizer, a customer chat assistant and a nightly batch job, a user-facing agent and an internal eval agent. Mixing very different traces in one project makes pattern detection noisier; splitting keeps each project's signal clean.
+>
+> Multi-project routing is one SDK instance with `capture({ project: "<slug>" })` per call site — full details in [references/project-scoping.md](references/project-scoping.md).
+>
+> Which fits your case?
+
+Stick to the trade-off above. Don't recommend one option as the default and don't editorialize about maintenance cost — the user knows their codebase better than you do. If they ask which is better for them, repeat the "similar work vs. different goals" framing rather than picking.
+
+**If the user picks multi-project, the slugs they need may not all exist yet.** Two paths — offer them in this order, but don't push:
+
+1. **Install the Latitude MCP server.** Latitude ships a remote, OAuth-authenticated MCP at `https://api.latitude.so/v1/mcp` that lets you (the agent) call `listProjects`, `createProject`, `getProject`, etc. directly from this conversation. Once connected, you can create the missing projects on the user's behalf and read the slugs back without a context switch.
+
+   Read [references/mcp-setup.md](references/mcp-setup.md) for the per-client install commands. **Detect which assistant you are running in** (Claude Code CLI, Claude Desktop, Cursor, Codex, Gemini CLI, Zed, OpenCode, Antigravity, GitHub Copilot, …) from the system context before suggesting a command — do not guess. If you cannot tell, ask once.
+
+   Offer the install as a recommendation, not a requirement:
+   > *I can install the Latitude MCP for you — it lets me create the projects and read the slugs back without you leaving the editor. It also stays useful past this install for listing traces, filing annotations, and managing API keys from inside the chat. Want me to walk through the install? You can also create them manually at https://console.latitude.so if you'd rather.*
+
+2. **Manual creation in the console.** If the user declines the MCP install (or just prefers the console), send them to [https://console.latitude.so](https://console.latitude.so) → **New project**, one per slug needed. Ask them to paste each resulting slug back into the conversation, then continue.
+
+After every project the user wants is confirmed to exist (either via `listProjects` over MCP or via the user pasting slugs), record the list and continue with **1b**.
+
+**If the user picks single-project**, you only need one slug. Continue with 1b — no MCP install is required for slug discovery. (You may still mention the MCP once at the end of the install as a quality-of-life win for inspecting traces / filing annotations later. Don't dwell on it.)
+
+#### 1b. Look in the repo first
 
 Before asking the user, search for already-configured credentials in this order:
 
@@ -89,9 +132,9 @@ For each variable, classify it as one of:
 - ✅ **Set with a real value** in one of the locations above.
 - ❌ **Missing** — not present anywhere, or only present as an empty string / placeholder (`""`, `your-api-key`, `xxx`, `<replace-me>`, `changeme`).
 
-If both values are ✅, jump to 1c. If anything is ❌, go to 1b — and only ask for the variables that are actually missing.
+If both values are ✅, jump to 1d. If anything is ❌, go to 1c — and only ask for the variables that are actually missing.
 
-#### 1b. How to ask, if missing
+#### 1c. How to ask, if missing
 
 When one or more variables are missing, **report the gap to the user using ❌ explicitly** — do not bury it in prose. The user must be able to see at a glance which variables are missing and where they need to be set. Use a checklist format like this (adapt to whatever target file you detected — `.env`, `.env.local`, `fly.toml`, `vercel.json`, GitHub Actions secrets, Helm values, etc.):
 
@@ -104,7 +147,15 @@ Latitude credentials check — target: .env
 
 If only one is missing, mark the present one with ✅ and the missing one with ❌, so the user sees both states. Detect the right target file from what already exists in the repo (e.g. if the repo uses `.env.local`, write there; if it uses Doppler / Fly secrets / Vercel env, name those instead of inventing a `.env`).
 
-Then **walk the user through how to get each missing value** — give them clickable URLs and step-by-step instructions, not vague "look in settings" hints. **You will not write the values to the file; the user will.** Use this template, including only the bullets for variables that are ❌:
+**Before walking the user through manual steps, check whether the Latitude MCP is installed.** If it is, you can drive the whole credentials setup automatically:
+
+- `listApiKeys` shows existing keys (metadata only — names, prefixes, last 4 chars) so the user can choose between *use an existing key (paste it)* and *create a new one*.
+- `createApiKey` creates a new key and returns the secret **once** in the response. You may write that secret to `.env` if the user explicitly authorizes it in the chat (see Rule 5's MCP exception); otherwise surface it and have the user paste.
+- `listProjects` / `createProject` handle the slug side the same way.
+
+This is the fully automated path. See [references/mcp-setup.md](references/mcp-setup.md#step-4--use-the-mcp-for-end-to-end-setup) for the recommended order. If the MCP is not installed (or the user declines to install it), fall through to the manual walkthrough below.
+
+Then, for the manual path, **walk the user through how to get each missing value** — give them clickable URLs and step-by-step instructions, not vague "look in settings" hints. **You will not write the values to the file; the user will.** Use this template, including only the bullets for variables that are ❌:
 
 > Here is how to get the missing values. **You will need to add them to `<file>` yourself — I will not write secrets to that file for you.**
 >
@@ -135,7 +186,7 @@ What you *may* do without a real value:
 
 Never hardcode the key in source code either; load from `process.env` / `os.environ` only.
 
-#### 1c. Verify credentials reach the project before writing any code
+#### 1d. Verify credentials reach the project before writing any code
 
 Run the curl probe in [references/otlp-fallback.md](references/otlp-fallback.md#verify-with-curl) — it works regardless of language and tells you in one shot:
 
@@ -498,6 +549,7 @@ If the README and this skill disagree, **the README wins**. Offer to update this
 | TypeScript / Node specifics, ESM gotchas, `instrumentations` object, per-SDK notes, Next.js | [references/typescript.md](references/typescript.md) |
 | Python specifics | [references/python.md](references/python.md) |
 | Multi-project apps (per-capture `project`, resource attribute, bare-OTel routing) | [references/project-scoping.md](references/project-scoping.md) |
+| Installing the Latitude MCP (per-client commands, project creation on the user's behalf, client detection) | [references/mcp-setup.md](references/mcp-setup.md) |
 | Non-TS/Python codebases (Go, Java, Ruby, .NET, PHP, Rust, Elixir, …) | [references/otlp-fallback.md](references/otlp-fallback.md) |
 | Auditing an existing integration or a PR | [references/audit-checklist.md](references/audit-checklist.md) |
 
