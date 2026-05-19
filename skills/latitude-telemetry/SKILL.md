@@ -1,11 +1,22 @@
 ---
 name: latitude-telemetry
-description: Add or review Latitude Telemetry for LLM apps. Use for Latitude tracing, LLM observability, missing traces, or OpenTelemetry/OTLP integration in TypeScript, Python, and other runtimes.
+description: Add or review Latitude Telemetry for LLM apps. Use for Latitude tracing, LLM observability, missing traces, OpenTelemetry/OTLP integration in TypeScript, Python, and other runtimes, including using Latitude MCP to discover telemetry configuration values.
 ---
 
 # Latitude Telemetry
 
 Add or review Latitude Telemetry without disrupting existing observability. Latitude is OpenTelemetry-based, so compose with the app's current OTel/Sentry/Datadog setup instead of replacing it.
+
+## Latitude MCP-assisted configuration
+
+Use this section when adding Latitude telemetry and configuration values are missing or ambiguous. The Latitude MCP is a remote OAuth-authenticated MCP server at `https://api.latitude.so/v1/mcp` that can expose Latitude workspace data and actions to the agent. It is not required for telemetry, but when it is connected it should be used to reduce user back-and-forth.
+
+- **Check MCP availability first.** Before asking the user for Latitude project/API-key details, inspect the connected MCP tools/servers available in the current agent harness. If a Latitude MCP server is available and authenticated, use it to discover organization/project metadata and to help prepare telemetry configuration.
+- **Offer MCP installation when unavailable.** If the Latitude MCP is not connected, pause before asking for Latitude config values and ask whether the user wants to install/connect it so the agent can automatically discover projects and help fill configurable telemetry variables. Briefly explain that the Latitude MCP gives the agent OAuth-scoped access to their Latitude workspace, including projects, keys, traces, annotations, scores, searches, issues, datasets, and other Latitude resources; connected agents can be revoked under **Settings → Keys → OAuth Keys**. Do not install or configure the MCP without explicit approval. If the user declines, continue with the normal manual configuration flow.
+- **Use MCP to fill non-secret config.** Prefer MCP-provided project data to identify the correct `LATITUDE_PROJECT_SLUG` when the user has already indicated, or the repo clearly implies, which Latitude project should receive traces. If multiple plausible projects exist, present the options and ask the user to choose one.
+- **Use MCP for secret creation/metadata only when safe.** If the Latitude MCP exposes API-key management, use it only after user approval and only to create or identify the needed key metadata. Do not print real API key values in chat. Put secrets directly into the project's existing secret manager only when the harness/tooling supports doing so safely; otherwise add placeholders to env examples/docs and tell the user where to store the real value.
+- **Do not ask for values the MCP can answer.** If the MCP can list projects, infer slugs, or confirm existing key names, do that before asking the user. Ask only for decisions MCP cannot know, such as which project should receive traces when ambiguous, whether to create a new API key, or where secrets should be stored.
+- **Keep MCP separate from app telemetry.** MCP helps configure Latitude; it does not trace the target app's LLM calls. The app still needs the telemetry SDK or OTLP exporter configured with `LATITUDE_API_KEY` and `LATITUDE_PROJECT_SLUG` or equivalent OTLP headers.
 
 ## Workflow
 
