@@ -1,56 +1,31 @@
-# skills
+# Skills
 
-Agent skills that teach AI coding assistants how to add [Latitude](https://latitude.so) observability to applications using the official [Latitude Telemetry](https://github.com/latitude-dev/latitude-llm/tree/main/packages/telemetry) packages (OpenTelemetry-based).
+Agent skills that teach AI coding assistants how to build with [Latitude](https://latitude.so).
 
 ## Skills
 
-| Skill | Description |
-| ----- | ----------- |
-| [latitude-telemetry](skills/latitude-telemetry) | Add or audit `@latitude-data/telemetry` (TypeScript) and `latitude-telemetry` (Python) instrumentation. Sends LLM traces (OpenAI, Anthropic, Bedrock, Vercel AI SDK, LangChain, LlamaIndex, …) to a Latitude project. Covers codebase discovery, bootstrap (`initLatitude` / `init_latitude`), advanced OpenTelemetry integration (`LatitudeSpanProcessor`, `registerLatitudeInstrumentations`), and `capture()` for user/session/tags context. |
+| Skill                                           | Description                                                                    |
+| ----------------------------------------------- | ------------------------------------------------------------------------------ |
+| [latitude-telemetry](skills/latitude-telemetry) | Add Latitude Telemetry instrumentation for TypeScript and Python applications. |
 
 ## Installation
 
-### Recommended
+### Quick start
 
-Run this in your project — no prior install needed:
+Install a skill with the `skills` CLI:
 
-```bash
-npx skills add latitude-dev/skills --skill "latitude-telemetry"
+```sh
+npx skills add https://github.com/latitude-dev/skills --skill <skill-name>
 ```
 
-Works with Claude Code, Cursor, and any other agent that reads skills from the standard locations.
+### Manual installation
 
-### Manual symlink
+Copy the desired skill's `SKILL.md` from `skills/<skill-name>/SKILL.md` into your agent harness's skills directory.
 
-Clone this repo and symlink the skill into your agent's skills directory:
+- **Claude Code**: add it under `.claude/skills/<skill-name>/SKILL.md` in your project, or under your user-level Claude Code skills directory if you want it available across projects.
+- **Codex**: add it under `.codex/skills/<skill-name>/SKILL.md` in your project, or the equivalent user-level Codex skills directory.
+- **Cursor**: add it under `.cursor/skills/<skill-name>/SKILL.md` in your project so Cursor agents can load it with the rest of your workspace instructions.
+- **OpenCode**: add it under `.opencode/skills/<skill-name>/SKILL.md` in your project, or the equivalent user-level OpenCode skills directory.
+- **Other `.agents`-compatible agent harnesses**: add it under `.agents/skills/<skill-name>/SKILL.md`.
 
-```bash
-git clone https://github.com/latitude-dev/skills.git /path/to/latitude-skills
-ln -s /path/to/latitude-skills/skills/latitude-telemetry /path/to/skills-directory/latitude-telemetry
-```
-
-Common skills directories:
-
-- Cursor (project): `<repo>/.cursor/skills/latitude-telemetry`
-- Cursor (personal): `~/.cursor/skills/latitude-telemetry` (do **not** use `~/.cursor/skills-cursor/`; that tree is Cursor-managed)
-
-### Manual copy
-
-If symlinks are not an option, copy `skills/latitude-telemetry/` into the target skills directory.
-
-## Prerequisites
-
-- A Latitude account and project.
-- `LATITUDE_API_KEY` and `LATITUDE_PROJECT_SLUG` (and optionally `LATITUDE_TELEMETRY_URL` for ingest endpoint overrides).
-
-Keys and project identifiers come from the Latitude product UI for your workspace.
-
-## Upstream source of truth
-
-Package READMEs and examples live in the monorepo:
-
-- [packages/telemetry/typescript](https://github.com/latitude-dev/latitude-llm/tree/main/packages/telemetry/typescript)
-- [packages/telemetry/python](https://github.com/latitude-dev/latitude-llm/tree/main/packages/telemetry/python)
-
-When package behavior or APIs change, prefer fetching those READMEs over relying on stale skill text.
-
+After copying the skill, restart or reload your agent harness so it can discover the new instructions.
