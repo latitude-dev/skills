@@ -4,9 +4,17 @@ Agent skills that teach AI coding assistants how to build with [Latitude](https:
 
 ## Skills
 
-| Skill                                           | Description                                                                    |
-| ----------------------------------------------- | ------------------------------------------------------------------------------ |
-| [latitude-telemetry](skills/latitude-telemetry) | Add Latitude Telemetry instrumentation for TypeScript and Python applications. |
+| Skill                                           | Description                                                                                        |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| [latitude-setup](skills/latitude-setup)         | Zero-account onboarding: bootstrap a temporary Latitude account, instrument, verify traces, claim. |
+| [latitude-cli](skills/latitude-cli)             | Install, authenticate, and drive the `latitude` CLI to run Latitude API operations from a terminal.|
+| [latitude-telemetry](skills/latitude-telemetry) | Add Latitude Telemetry instrumentation for TypeScript and Python applications.                     |
+
+> **`latitude-setup` builds on the other two.** It orchestrates `latitude-cli` (install + auth) and `latitude-telemetry` (instrumentation). The `skills` CLI does not auto-install dependency skills, so add all three when you want the from-scratch onboarding flow:
+>
+> ```sh
+> npx skills add https://github.com/latitude-dev/skills --skill latitude-setup,latitude-cli,latitude-telemetry
+> ```
 
 ## Installation
 
