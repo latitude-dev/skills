@@ -1,15 +1,31 @@
 ---
 name: latitude-setup
-description: Zero-account onboarding orchestrator for Latitude. Bootstrap a temporary Latitude account from the terminal (no signup), instrument the app for tracing, verify real traces, clean up, and hand back a browser link to claim ownership. Use when someone wants to set up Latitude from scratch with no existing account or API key — the landing-page "try it with your agent" flow.
+description: Zero-account onboarding orchestrator for Latitude. Bootstrap a temporary Latitude account from the terminal (no signup), instrument the app for tracing, verify real traces, clean up, and hand back a browser link to claim ownership. Use when someone wants to set up Latitude from scratch with no existing account or API key — the landing-page "try it with your agent" flow. If it turns out the user already has an account, API key, or connected Latitude MCP, this skill redirects to latitude-telemetry + latitude-cli instead of creating a temporary account.
 ---
 
 # Latitude Setup (zero-account onboarding)
 
 Orchestrates the **from-scratch** path: the user has **no Latitude account and no API key**. This skill provisions a temporary account via the CLI, instruments the app, verifies real traces, and returns a claim link the user opens in a browser to take ownership.
 
-**When NOT to use this skill:** if the user already has a Latitude account/API key (e.g. they're signed in and want to instrument another app), skip bootstrap/claim entirely and go straight to `latitude-telemetry` + `latitude-cli`.
-
 This skill depends on two others — **`latitude-cli`** (install + auth + command primitives) and **`latitude-telemetry`** (instrumentation). Read both; this skill only adds the orchestration between them.
+
+## Preflight: don't create a temporary account if the user already has one
+
+The temporary-account bootstrap exists to make onboarding automatic for someone with **nothing set up yet**. But a user who already has a Latitude account can land on this skill by mistake — and routing them through a redundant temporary org plus a claim step is worth avoiding when you can. So before bootstrapping anything, infer from the environment whether an account already exists, and **redirect instead of bootstrapping** if it clearly does:
+
+- **An API key is already present** — `LATITUDE_API_KEY` set in the shell, in a `.env` (search the app root and its parents), in the app's secret manager, or in deployment/CI config.
+- **A Latitude MCP is connected and authenticated** in this harness — an OAuth-authorized Latitude MCP means the user already has a workspace.
+- **Existing Latitude config/instrumentation in the repo** — a `LATITUDE_PROJECT_SLUG`, a `@latitude-data/telemetry` / `latitude-telemetry` dependency, or an OTLP exporter already pointed at `ingest.latitude.so`.
+- **The user says so** — they mention being signed in, having a project, or already using Latitude.
+
+**If any of these hold → do NOT bootstrap.** The user has an account; redirect to the direct path:
+
+1. Use **`latitude-telemetry`** via its "invoked directly" entry point to audit and instrument the app against the existing key/project. Use **`latitude-cli`** if you still need to install/authenticate the CLI or discover the project slug (`latitude projects list`).
+2. Finish with `latitude-telemetry`'s verification step: run the user's **real** LLM flow and confirm the traces landed via the Latitude **MCP, CLI, or API**. Do **not** run this skill's bootstrap, claim-link, or delete-and-recreate cleanup — those belong only to the temporary-account flow, and the cleanup would destroy a project the user actually owns.
+
+**If genuinely nothing is set up** (no key, no MCP, no existing config) → proceed with the temporary-account flow below.
+
+**If you can't confidently tell either way → default to bootstrapping; don't stall on it.** This detection is best-effort. A bootstrapped temporary organization is low-stakes and recoverable: the claim link lets it be redeemed later, and it can be claimed even into an account the user already has — so creating one for a user who turned out to already have an account is a minor, fixable outcome, not a failure. The overriding goal is to get the app instrumented and emitting real traces to Latitude **autonomously**; don't block that on perfect account detection. If the user is right there and a one-line question is cheap, you may confirm first — but absent a clear signal, bootstrap and keep going.
 
 ## Ground rules
 
@@ -82,6 +98,8 @@ If it shows `missing`, `.env` isn't being applied — you're either not running 
 ### 4. Instrument the app (delegate to `latitude-telemetry`)
 
 Hand off to `latitude-telemetry` to add instrumentation, pointing it at `LATITUDE_PROJECT_SLUG=<projectSlug>`. The key/slug are already provisioned and in `.env`, so **skip that skill's MCP-config discovery detour** — you have the values. Follow its audit → group → clarify → **plan → wait for approval** → implement steps. Do not edit code before the user approves the plan.
+
+`latitude-telemetry`'s workflow ends with its own "verify real traces land" step. In this orchestration that verification loop is steps 5–6 below — and step 7 then extends it with the temporary-account cleanup — so drive the trace-checking from here rather than verifying twice.
 
 ### 5. Run the user's real LLM flow
 

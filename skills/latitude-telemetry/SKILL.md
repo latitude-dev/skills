@@ -1,11 +1,20 @@
 ---
 name: latitude-telemetry
-description: Add or review Latitude Telemetry for LLM apps. Use for Latitude tracing, LLM observability, missing traces, OpenTelemetry/OTLP integration in TypeScript, Python, and other runtimes, including using Latitude MCP to discover telemetry configuration values.
+description: Add or review Latitude Telemetry for LLM apps. Use for Latitude tracing, LLM observability, missing traces, OpenTelemetry/OTLP integration in TypeScript, Python, and other runtimes. Covers instrumenting a new project under an existing Latitude account (invoked directly) as well as the latitude-setup hand-off, discovering config via the Latitude MCP, and verifying that real traces land via the Latitude MCP, CLI, or API.
 ---
 
 # Latitude Telemetry
 
 Add or review Latitude Telemetry without disrupting existing observability. Latitude is OpenTelemetry-based, so compose with the app's current OTel/Sentry/Datadog setup instead of replacing it.
+
+## Entry points
+
+Two ways in; both do the same audit → instrument → verify work:
+
+- **Invoked directly** — the common case. The user **already has a Latitude account and API key** and wants to instrument an app: their first project under that account, or an additional one. They may already know the project slug, or you infer it from the repo or discover it via the Latitude MCP/CLI. Source config as described below; do **not** run the zero-account bootstrap.
+- **Delegated from `latitude-setup`** — the from-scratch, no-account path. That skill has already provisioned a temporary account and written `LATITUDE_API_KEY`/`LATITUDE_PROJECT_SLUG` to `.env`, so config is in place — skip the MCP discovery detour and go straight to audit → instrument.
+
+Either way, the work isn't done until you have **verified that real traces land in Latitude** (workflow step 6).
 
 ## First decision: redirect existing OTLP, or add the SDK?
 
@@ -51,7 +60,7 @@ For an app that already produces spans, the OTLP-redirect path is the lower-risk
    - Integration approach: ... (SDK bootstrap / existing OTel processor / generic OTLP, explained in plain language)
    - Env/config needed: ... (which values are needed, what they do, where to find them, and where placeholders/docs will be added)
    - Files to change: ... (what each file change accomplishes)
-   - Verification: ... (checks to run and how to confirm traces arrive)
+   - Verification: ... (which real flow will be run to emit traces, and how they'll be confirmed in Latitude — MCP, CLI, or API)
 
    Reply `go ahead` to approve this plan.
    ```
@@ -64,7 +73,18 @@ For an app that already produces spans, the OTLP-redirect path is the lower-risk
    - Initialize Latitude once at startup/module scope, before the first LLM call when possible. Avoid per-request SDK instances.
    - Preserve current observability; do not remove span processors/exporters unless the user explicitly approves.
    - When a config or env value you need may already be set (OTLP endpoint/headers, `LATITUDE_*`, etc.), **update the existing entry in place** — don't append a duplicate that leaves a stale value shadowing yours.
-   - Run formatter/typecheck/lint/tests. If credentials and a safe path exist, run one representative LLM flow per use-case group and flush before exit. For missing traces, check env values, project routing, initialization order, instrumentation registration, smart filtering, stream consumption inside `capture()`, and process exit before flush.
+   - Run formatter/typecheck/lint/tests, then verify that real traces actually land in Latitude (step 6). The change is not done until they do.
+
+6. **Verify the instrumentation works**
+   Instrumentation is not finished when the code compiles — only when real spans are confirmed in the Latitude project. Do your best to close this loop automatically rather than asking the user to check the UI. If credentials and a safe path exist:
+   - **Emit real traces.** Run the user's *actual* LLM flow — one representative run per use-case group — so genuine spans are produced, not a synthetic test span. Let the process finish or shut down gracefully so buffered spans flush; for short-lived scripts/jobs, `await latitude.flush()`/`latitude.shutdown()` (Python: `latitude.flush()`) before exit. A hard kill can drop spans.
+   - **Read the traces back with the best tool available**, in this order:
+     1. **Latitude MCP**, if connected and authenticated — use its trace/search tools to fetch the project's recent traces.
+     2. **Latitude CLI**, if installed and authenticated — `latitude traces list --project-slug <slug> --format json` (see `latitude-cli`).
+     3. **Latitude API directly**, as a fallback — `GET` the traces endpoint under `https://api.latitude.so` with `Authorization: Bearer <LATITUDE_API_KEY>`. Discover the exact path/params from the docs or by inspecting the CLI's underlying request (`latitude traces list --schema`, or `--debug` / `--format http`).
+   - Spans export on a batch interval, so they may take a moment to arrive — **poll** rather than expecting them instantly.
+   - **Confirm quality, not just presence:** the expected span per use-case group, correct model and token counts, captured messages, sensible span boundaries, and `userId`/`sessionId`/tags/metadata where set. If spans are missing or wrong, fix and re-run — **loop until the traces are correct.** Common causes of missing/incorrect traces: wrong env values or project routing, initialization after the first LLM call, unregistered instrumentation, smart filtering, streams consumed outside `capture()`, or the process exiting before flush.
+   - **Do not destructively "clean up" a real project.** These verification runs leave real traces in the user's project — that is expected. The delete-and-recreate cleanup of noisy iteration traces belongs **only** to the zero-account flow in `latitude-setup` (a throwaway project); never delete/recreate a project the user already owns. Keep verification runs minimal instead.
 
 ## No account yet? Zero-account CLI bootstrap
 
