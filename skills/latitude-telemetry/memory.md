@@ -120,6 +120,8 @@ Reuse the main `SKILL.md` discipline: clarify material gaps one at a time, **pre
 
 **Do not instrument** in-request working memory, message history, or a read-only reference corpus (see the gate).
 
+**Instrument where the paths converge — and confirm which path production actually takes.** Agents often reach the same store by more than one route: a per-tenant/per-user store *and* a default/fallback store, a tool call *and* an HTTP/settings route, an implicit "load memory into the prompt" read *and* an explicit recall. If you instrument one binding, you can miss the route real traffic uses — the code compiles, a synthetic test passes, and **no spans appear in production**. Prefer the single lowest point every route funnels through (usually the storage method itself); if there isn't one, instrument each route. Then confirm your chosen point is the one the **real** flow hits — trace it once end-to-end, don't infer it from the code.
+
 ## Operations
 
 Span name equals `gen_ai.operation.name`; both are one of:
@@ -217,6 +219,8 @@ Options are snake_case (`store_id`, `record_id`, `records`, `count`, `capture_co
 
 If the app traces to Latitude without the Latitude SDK, emit the spans directly on its existing tracer — no new dependency. Set `gen_ai.operation.name` (and the span name) to the operation, and the `gen_ai.memory.*` attributes:
 
+> **⚠️ Use the same tracer provider that produced the request's other spans — not necessarily the global `trace.getTracer()`.** The examples below use the global API, which is correct only when the app has **one** `TracerProvider`. Apps that create **more than one** — per tenant, per worker, per agent/session instance, per request — register each provider globally, but only the *first* registration wins the global; `trace.getTracer()` then returns whichever booted first, which may not be the one exporting *this* request's spans (or may already be shut down). The classic symptom is that the surrounding request spans land in Latitude but the memory spans silently don't. When more than one provider can exist, obtain the provider from the active span / request context (or thread it in) and call `provider.getTracer("gen_ai")` on **that** one, so memory spans share the request's exporter and get flushed with it.
+
 | Attribute | Purpose |
 | --- | --- |
 | `gen_ai.operation.name` | The operation (required) |
@@ -274,13 +278,16 @@ Beyond the store, record, and full-body rules above, two more decide whether the
 
 Not done at compile time — only when memory operations show up correctly in Latitude.
 
-- **Emit real operations.** Run the actual flow: at least one turn that **recalls** memory and one that **writes** it, so both a `search_memory` and a mutating span are produced. For short-lived scripts/jobs, `await latitude.flush()` / `latitude.shutdown()` (Python: `latitude.flush()`) before exit so spans flush.
+- **Emit real operations — drive the running app, not a unit test of the helper.** Run the actual flow: at least one turn that **recalls** memory and one that **writes** it, so both a `search_memory` and a mutating span are produced. A unit test of the emit helper proves the span is *shaped* right but not that it's *wired into the path production takes* nor emitted on the *right provider* — the two most common reasons memory spans never appear (see below). Exercise the real store-resolution and tracing wiring. For short-lived scripts/jobs, `await latitude.flush()` / `latitude.shutdown()` (Python: `latitude.flush()`) before exit so spans flush.
 - **Read it back**, using MCP → CLI → API in the order `SKILL.md` defines, and the product surfaces:
   - On the **Spans tab**, the operations classify (`search_memory`, `create_memory`, …) and carry the store/record attributes.
   - On the **Memory page**, the store appears under the expected id, its records show the expected current bodies, and a second write to a record produces a new version and a diff.
   - On the **trace/session detail**, the Memory summary shows tokens read / added / removed.
   - If content capture is off, verify classification and `record.count` instead of bodies.
 - **Loop until correct.** Common issues: `store.id` empty (everything in `(unattributed)`); `record.id` unstable or missing (history won't stitch, reads don't attribute); content expected but `captureContent` left off; a write sending a partial body instead of the full snapshot; or the span emitted outside the `capture()` so it never joins the trace.
+- **Base/request traces land but memory spans don't** — the highest-signal symptom, and almost always one of two wiring mistakes, not a shaping bug:
+  1. **Wrong path.** The instrumented store binding isn't the one the real flow uses — e.g. you wrapped a default/fallback store but production takes the per-tenant store, or you wrapped the tool path but the write came through an HTTP route. Confirm the real flow actually reaches your code (log/breakpoint once), then move to the point all routes converge (see "Instrument where the paths converge").
+  2. **Wrong provider.** The span was created on the global `trace.getTracer()`, but the app has multiple `TracerProvider`s and the request's spans go to a different one; yours export to a stale/retired provider and are dropped. Emit on the provider that owns the request's other spans (see "No SDK / raw OTLP" warning).
 
 ## Reference
 
