@@ -4,16 +4,23 @@ Agent skills that teach AI coding assistants how to build with [Latitude](https:
 
 ## Skills
 
-| Skill                                           | Description                                                                                        |
-| ----------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| [latitude-setup](skills/latitude-setup)         | Zero-account onboarding: bootstrap a temporary Latitude account, instrument, verify traces, claim. |
-| [latitude-cli](skills/latitude-cli)             | Install, authenticate, and drive the `latitude` CLI to run Latitude API operations from a terminal.|
-| [latitude-telemetry](skills/latitude-telemetry) | Add Latitude Telemetry instrumentation for TypeScript and Python applications.                     |
+| Skill                                                         | Description                                                                                                                                     |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| [latitude-setup](skills/latitude-setup)                       | Zero-account onboarding: bootstrap a temporary Latitude account, instrument, verify traces, claim.                                              |
+| [latitude-cli](skills/latitude-cli)                           | Install, authenticate, and drive the `latitude` CLI to run Latitude API operations from a terminal.                                             |
+| [latitude-telemetry](skills/latitude-telemetry)               | Add Latitude Telemetry instrumentation for TypeScript and Python applications.                                                                  |
+| [latitude-memory-telemetry](skills/latitude-memory-telemetry) | Add Latitude observability for an agent's long-term memory (files, DB, vector store, or a provider) — per-record history, diffs, and provenance. |
 
 > **`latitude-setup` builds on the other two.** It orchestrates `latitude-cli` (install + auth) and `latitude-telemetry` (instrumentation). The `skills` CLI does not auto-install dependency skills, so add all three when you want the from-scratch onboarding flow:
 >
 > ```sh
 > npx skills add https://github.com/latitude-dev/skills --skill latitude-setup,latitude-cli,latitude-telemetry
+> ```
+>
+> **`latitude-memory-telemetry` is a telemetry add-on.** It builds on `latitude-telemetry` and applies only when the app has long-term memory (state persisted across sessions, runs, or users). Add it alongside `latitude-telemetry` for those apps:
+>
+> ```sh
+> npx skills add https://github.com/latitude-dev/skills --skill latitude-telemetry,latitude-memory-telemetry
 > ```
 
 ## Installation
