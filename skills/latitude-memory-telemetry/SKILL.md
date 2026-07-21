@@ -98,9 +98,9 @@ There is no duplicate-span risk to manage here — since almost nothing emits me
 
 Reuse `latitude-telemetry`'s discipline: clarify material gaps one at a time, **present a plan and wait for explicit approval** before editing code, never inline secrets, and verify against real runs rather than declaring done at compile time. The memory-specific steps:
 
-1. **Audit the memory layer.** Find the store and its call sites for read, write, and delete. Record: what the store is (files / db / vector / kv / provider), how a logical store maps to a `store.id` (especially for per-user memory), what a record is and its stable id, and whether record content should be captured (PII call — see attribution rules).
+1. **Audit the memory layer.** Find the store and its call sites for read, write, and delete. Record: what the store is (files / db / vector / kv / provider), how a logical store maps to a `store.id` (especially for per-user memory), what a record is and its stable id, and the content-capture decision — default it **on** (see attribution rules), off only for memory you cannot send to Latitude.
 2. **Map operations.** Map each call site to one of the seven operations (table below).
-3. **Plan, then wait.** Extend the `latitude-telemetry` plan template with: the store type and `store.id` scheme, the content-capture decision and its PII tradeoff, the specific call sites to instrument, and how you will verify on the Memory page. Wait for explicit approval.
+3. **Plan, then wait.** Extend the `latitude-telemetry` plan template with: the store type and `store.id` scheme, the content-capture decision (recommend on; note any PII reason to keep it off), the specific call sites to instrument, and how you will verify on the Memory page. Wait for explicit approval.
 4. **Implement after approval.** Add one span per operation at the store boundary, inside the existing `capture()`. On writes, pass the record's **full new body**, not a delta.
 5. **Verify on the Memory page** (see Verify).
 
@@ -146,7 +146,8 @@ import { createMemoryTelemetry } from "@latitude-data/telemetry";
 
 // `latitude` is the instance from your base tracing setup.
 // storeId groups everything; set it per user for per-user memory.
-const memory = createMemoryTelemetry({ latitude, storeId: `user/${userId}` });
+// captureContent is off by default — turn it on (strongly recommended) so diffs and token deltas work.
+const memory = createMemoryTelemetry({ latitude, storeId: `user/${userId}`, captureContent: true });
 ```
 
 Each operation has **two forms**. Call them inside the `capture()` that already wraps the turn.
@@ -181,7 +182,7 @@ await memory.update({
 await memory.delete({ recordId: "preferences/tone" }); // omit recordId to wipe the whole store
 ```
 
-**Content is opt-in and off by default.** Record bodies (`records`) and the search `query` are only sent when `captureContent` is enabled — factory-wide via `createMemoryTelemetry({ latitude, captureContent: true })` or per call. Without it you still get classification, `record.count`, and the fact that a change happened, but not diffs, token deltas, or content browsing. See attribution rules before enabling. A `redact` hook scrubs records before they are sent.
+**Capture content — strongly recommended.** Record bodies (`records`) and the search `query` are only sent when `captureContent` is enabled (shown above; set it factory-wide or per call). It is **off by default** because both are OTEL Opt-In / PII — but leaving it off strips memory observability of most of its value: you get classification and `record.count` and the fact that *something* changed, but **no diffs, no token deltas, and nothing to browse**. Turn it on unless the memory genuinely holds data you cannot send to Latitude; when only some fields are sensitive, keep it on and scrub them with the `redact` hook rather than disabling capture entirely.
 
 ## Python
 
@@ -190,7 +191,8 @@ Requires the same `latitude-telemetry` package as base tracing. `create_memory_t
 ```python
 from latitude_telemetry import create_memory_telemetry
 
-memory = create_memory_telemetry(latitude, store_id=f"user/{user_id}")
+# capture_content is off by default — turn it on (strongly recommended) so diffs and token deltas work.
+memory = create_memory_telemetry(latitude, store_id=f"user/{user_id}", capture_content=True)
 
 # Read — execute may be sync or async.
 hits = memory.search(
@@ -212,7 +214,7 @@ memory.upsert(
 memory.delete(record_id="preferences/tone")
 ```
 
-Options are snake_case (`store_id`, `record_id`, `records`, `count`, `capture_content`, `records_from_result`). Content is opt-in via `capture_content` (off by default), with a `redact` hook.
+Options are snake_case (`store_id`, `record_id`, `records`, `count`, `capture_content`, `records_from_result`). As in TypeScript, `capture_content` is off by default but **recommended on** — enable it (with the `redact` hook for sensitive fields) so diffs and token deltas work.
 
 ## No SDK / raw OTLP
 
@@ -268,7 +270,7 @@ Other runtimes (Go, Java, Ruby, .NET, …) set the identical attributes on whate
 
 Beyond the store, record, and full-body rules above, two more decide whether the data is useful:
 
-- **Content is opt-in and is PII.** `captureContent` / `capture_content` (off by default) gates both record bodies and the search query. Enabling it sends that content to Latitude — treat it like any content capture: confirm with the user before turning it on, and use the `redact` hook to scrub sensitive fields. Without content you still get classification and counts; with it you get diffs, token deltas, and content browsing.
+- **Capture content — strongly recommended.** `captureContent` / `capture_content` gates both record bodies and the search query and is **off by default** because both are OTEL Opt-In / PII. Turn it on: without content, memory observability loses most of its point — you get classification and counts, but no diffs, no token deltas, and nothing to browse. Leave it off only when the memory holds data you cannot send to Latitude; when only some fields are sensitive, keep capture on and scrub them with the `redact` hook. Flag it for the user when enabling, as with any content capture.
 - **Put an `id` on each record returned by `search_memory`** so reads attribute to the record they came from; id-less hits bucket together.
 
 ## Verify
