@@ -1,6 +1,6 @@
 ---
 name: latitude-telemetry
-description: Add or review Latitude Telemetry for LLM apps. Use for Latitude tracing, LLM observability, missing traces, OpenTelemetry/OTLP integration in TypeScript, Python, and other runtimes. Covers instrumenting a new project under an existing Latitude account (invoked directly) as well as the latitude-setup hand-off, discovering config via the Latitude MCP, and verifying that real traces land via the Latitude MCP, CLI, or API. Also covers instrumenting an agent's long-term memory (memory observability) via the bundled memory.md when the app persists memory across sessions, runs, or users.
+description: Add or review Latitude Telemetry for LLM apps. Use for Latitude tracing, LLM observability, missing traces, OpenTelemetry/OTLP integration in TypeScript, Python, and other runtimes. Covers instrumenting a new project under an existing Latitude account (invoked directly) as well as the latitude-setup hand-off, discovering config via the Latitude MCP, and verifying that real traces land via the Latitude MCP, CLI, or API.
 ---
 
 # Latitude Telemetry
