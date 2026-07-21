@@ -8,8 +8,6 @@ This is an **add-on to base tracing**, not a separate pipeline. Memory operation
 
 These are the **standard OpenTelemetry GenAI memory-operation spans**, not a Latitude-proprietary format — Latitude only ingests and interprets them. So if the app already emits them, there is nothing to install; if it does not (the common case), you add them once (see the first decision below).
 
-Do this only when the app actually has long-term memory (**the gate below**), and only once base tracing works (the main `SKILL.md` workflow).
-
 ## Prerequisite: base tracing must already work
 
 Memory spans are ordinary spans. They need the same `LATITUDE_API_KEY` / `LATITUDE_PROJECT_SLUG` and exporter as everything else, and they should nest inside the `capture()` boundary that already wraps the request/agent turn so they attach to the right trace and session.
@@ -86,8 +84,8 @@ These operations are the **OpenTelemetry GenAI memory convention** — an open s
 
 - **Already emitting OTEL memory spans?** A memory library or prior instrumentation that sets `gen_ai.operation.name` to `search_memory` / `create_memory` / … on its spans means there is **nothing to install** — those spans already reach Latitude through base tracing. Just verify they land and are attributed to the right store. This is uncommon: the convention is recommended but not required, is young, and has no auto-instrumentation, so most OTEL-emitting apps have **not** added memory spans.
 - **Not emitting them yet?** (the common case) Add them by whichever path fits the stack:
-  - **App already uses the Latitude SDK** (`@latitude-data/telemetry` / `latitude-telemetry`) → use the memory helper (`createMemoryTelemetry` / `create_memory_telemetry`). Least code, gets the attributes right, wraps timing and errors.
-  - **App traces to Latitude another way** — a generic OTLP exporter, a hand-rolled OTel setup, or a non-TS/Python runtime → emit **raw `gen_ai.memory.*` spans** on the tracer it already has. No new dependency.
+  - **App already uses the Latitude SDK** (`@latitude-data/telemetry` / `latitude-telemetry`) → use the memory helper (`createMemoryTelemetry` / `create_memory_telemetry`). Least code, gets the attributes right, wraps timing and errors, and — because it emits through your `Latitude` instance's own exporter — puts memory spans on the exact same pipeline as your base traces, with no extra wiring. Prefer it whenever a `Latitude` instance exists.
+  - **App traces to Latitude another way** — a generic OTLP exporter, a hand-rolled OTel setup, or a non-TS/Python runtime → emit **raw `gen_ai.memory.*` spans**, no new dependency. Here the wiring is on you: create the span on the tracer that already carries the request's other spans (see No SDK / raw OTLP).
 
 There is no duplicate-span risk to manage here — since almost nothing emits memory spans today, you are adding instrumentation, not redirecting it.
 
@@ -103,8 +101,9 @@ Reuse the main `SKILL.md` discipline: clarify material gaps one at a time, **pre
 
 ## Where and when to emit
 
-**Principle:** instrument the **boundary between the agent and its persistent store** — the functions that read from and write to it — not the agent's reasoning. Emit one span per operation, **inside the enclosing `capture()`** so it nests in the trace. Put the span where you have both the identifiers (store, record) and the data (the query and results for a read; the full new body for a write).
+**Principle:** instrument the **boundary between the agent and its persistent store** — the functions that read from and write to it, not the agent's reasoning. Put each span where you have both the identifiers (store, record) and the data (the query and results for a read; the full new body for a write), **inside the enclosing `capture()`** so it shares the request's trace, and on the **same tracer that carries the request's other spans** so it exports the same way (the SDK helper does this for you; for raw spans see No SDK / raw OTLP).
 
+- **Find where the routes converge.** A store is often reachable by more than one path — an implicit "load memory into the prompt" read and an explicit recall, a tool call and an HTTP/settings route, a per-user store and a default/fallback one. Instrument the single point they all funnel through (usually the storage method itself); if there isn't one, instrument each route. Then confirm the point you chose is the one the **real** flow hits — trace it once end to end, don't infer it from reading the code.
 - **Reads — prefer the search / query layer over per-item reads.** A single `search_memory` span that carries the query text and all returned records lets Latitude attribute retrieved tokens per record — richer than N bare point reads. If the code only does lookups by id, a read span per lookup is fine.
 - **Writes — instrument where the store is actually mutated** (or its immediate caller), and pass the record's full new content. Use `upsert` when the code does create-or-replace without distinguishing; use `create` / `update` when it knows which.
 
@@ -119,8 +118,6 @@ Reuse the main `SKILL.md` discipline: clarify material gaps one at a time, **pre
 **Deletes and resets:** `delete_memory` with a record id removes one record; `delete_memory` **without** a record id — or `delete_memory_store` — wipes the whole store (use it for a "clear my memory" / reset). Provisioning a fresh namespace maps to `create_memory_store`.
 
 **Do not instrument** in-request working memory, message history, or a read-only reference corpus (see the gate).
-
-**Instrument where the paths converge — and confirm which path production actually takes.** Agents often reach the same store by more than one route: a per-tenant/per-user store *and* a default/fallback store, a tool call *and* an HTTP/settings route, an implicit "load memory into the prompt" read *and* an explicit recall. If you instrument one binding, you can miss the route real traffic uses — the code compiles, a synthetic test passes, and **no spans appear in production**. Prefer the single lowest point every route funnels through (usually the storage method itself); if there isn't one, instrument each route. Then confirm your chosen point is the one the **real** flow hits — trace it once end-to-end, don't infer it from the code.
 
 ## Operations
 
@@ -219,7 +216,7 @@ Options are snake_case (`store_id`, `record_id`, `records`, `count`, `capture_co
 
 If the app traces to Latitude without the Latitude SDK, emit the spans directly on its existing tracer — no new dependency. Set `gen_ai.operation.name` (and the span name) to the operation, and the `gen_ai.memory.*` attributes:
 
-> **⚠️ Use the same tracer provider that produced the request's other spans — not necessarily the global `trace.getTracer()`.** The examples below use the global API, which is correct only when the app has **one** `TracerProvider`. Apps that create **more than one** — per tenant, per worker, per agent/session instance, per request — register each provider globally, but only the *first* registration wins the global; `trace.getTracer()` then returns whichever booted first, which may not be the one exporting *this* request's spans (or may already be shut down). The classic symptom is that the surrounding request spans land in Latitude but the memory spans silently don't. When more than one provider can exist, obtain the provider from the active span / request context (or thread it in) and call `provider.getTracer("gen_ai")` on **that** one, so memory spans share the request's exporter and get flushed with it.
+> **Emit on the tracer provider that exports the request's other spans.** The examples below use the global `trace.getTracer()`, which is correct only when the app has a **single** tracer provider. Apps that create several (common in multi-tenant or per-request setups) register just one as the global — whichever initialized first — and it may not be the one exporting *this* request's spans, so memory spans on the global can be silently dropped while the surrounding spans land. When more than one provider can exist, get the tracer from the provider that owns the request (thread it through, or if a `Latitude` instance exists use `latitude.getTracer(...)`), not blindly from the global.
 
 | Attribute | Purpose |
 | --- | --- |
@@ -278,16 +275,15 @@ Beyond the store, record, and full-body rules above, two more decide whether the
 
 Not done at compile time — only when memory operations show up correctly in Latitude.
 
-- **Emit real operations — drive the running app, not a unit test of the helper.** Run the actual flow: at least one turn that **recalls** memory and one that **writes** it, so both a `search_memory` and a mutating span are produced. A unit test of the emit helper proves the span is *shaped* right but not that it's *wired into the path production takes* nor emitted on the *right provider* — the two most common reasons memory spans never appear (see below). Exercise the real store-resolution and tracing wiring. For short-lived scripts/jobs, `await latitude.flush()` / `latitude.shutdown()` (Python: `latitude.flush()`) before exit so spans flush.
+- **Emit real operations — drive the running app, not a unit test of the emit helper.** A unit test proves the span is *shaped* right; it does not prove the span is *wired* into the path and provider production actually uses, which is where most failures are. Run the actual flow through its real store-resolution and tracing: at least one turn that **recalls** memory and one that **writes** it, so both a `search_memory` and a mutating span are produced. For short-lived scripts/jobs, `await latitude.flush()` / `latitude.shutdown()` (Python: `latitude.flush()`) before exit so spans flush.
 - **Read it back**, using MCP → CLI → API in the order `SKILL.md` defines, and the product surfaces:
   - On the **Spans tab**, the operations classify (`search_memory`, `create_memory`, …) and carry the store/record attributes.
   - On the **Memory page**, the store appears under the expected id, its records show the expected current bodies, and a second write to a record produces a new version and a diff.
   - On the **trace/session detail**, the Memory summary shows tokens read / added / removed.
   - If content capture is off, verify classification and `record.count` instead of bodies.
-- **Loop until correct.** Common issues: `store.id` empty (everything in `(unattributed)`); `record.id` unstable or missing (history won't stitch, reads don't attribute); content expected but `captureContent` left off; a write sending a partial body instead of the full snapshot; or the span emitted outside the `capture()` so it never joins the trace.
-- **Base/request traces land but memory spans don't** — the highest-signal symptom, and almost always one of two wiring mistakes, not a shaping bug:
-  1. **Wrong path.** The instrumented store binding isn't the one the real flow uses — e.g. you wrapped a default/fallback store but production takes the per-tenant store, or you wrapped the tool path but the write came through an HTTP route. Confirm the real flow actually reaches your code (log/breakpoint once), then move to the point all routes converge (see "Instrument where the paths converge").
-  2. **Wrong provider.** The span was created on the global `trace.getTracer()`, but the app has multiple `TracerProvider`s and the request's spans go to a different one; yours export to a stale/retired provider and are dropped. Emit on the provider that owns the request's other spans (see "No SDK / raw OTLP" warning).
+  - Timing: the **Spans tab** reflects new spans within seconds, but the **Memory page** and the **session summary** are built when the trace finishes — poll for a short while before concluding they are empty.
+- **Loop until correct.** If the memory spans are wrong once they arrive, it is usually shape: `store.id` empty (everything in `(unattributed)`); `record.id` unstable or missing (history won't stitch, reads don't attribute); content expected but `captureContent` left off; or a write sending a partial body instead of the full snapshot.
+- **If base/request spans land but memory spans never appear at all, suspect wiring, not shape** — the highest-signal symptom, and almost always one of: the instrumented code path isn't the one the real flow takes (see Where and when to emit), the span was created on a different tracer/provider than the request's (see No SDK / raw OTLP), or it was emitted outside the `capture()` so it never joined the trace.
 
 ## Reference
 
