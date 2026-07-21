@@ -1,9 +1,6 @@
----
-name: latitude-memory-telemetry
-description: Add Latitude observability for an LLM agent's long-term memory — state it persists across separate interactions, sessions, runs, or users, whether in files, a database, a vector store, a key-value store, or a provider like Mem0/Zep/Supermemory. Emits OpenTelemetry GenAI memory-operation spans (search/create/update/upsert/delete) so Latitude's Memory page shows each store's contents, per-record history, change diffs, token deltas, and the session behind every write. Use when instrumenting memory reads and writes, when the Memory page is empty, or when an already-traced app turns out to have long-term memory. Assumes base Latitude tracing already works (see latitude-telemetry); covers the createMemoryTelemetry / create_memory_telemetry SDK helpers and raw gen_ai.memory.* spans in TypeScript, Python, and other runtimes.
----
+# Long-term memory instrumentation
 
-# Latitude Memory Telemetry
+> Part of the **latitude-telemetry** skill — the memory add-on referenced from `SKILL.md`. Read `SKILL.md` first; this guide reuses that same audit → plan → implement → verify workflow and adds only the memory-specific parts. Apply it when the app has long-term memory (the gate below).
 
 Instrument an LLM agent's **long-term memory** so Latitude can show how it evolves: every store's current contents, each record's change history and diffs, the tokens read and written per session, and the exact session behind every write.
 
@@ -11,18 +8,18 @@ This is an **add-on to base tracing**, not a separate pipeline. Memory operation
 
 These are the **standard OpenTelemetry GenAI memory-operation spans**, not a Latitude-proprietary format — Latitude only ingests and interprets them. So if the app already emits them, there is nothing to install; if it does not (the common case), you add them once (see the first decision below).
 
-Do this only when the app actually has long-term memory (**the gate below**), and only once base tracing works (**`latitude-telemetry`**).
+Do this only when the app actually has long-term memory (**the gate below**), and only once base tracing works (the main `SKILL.md` workflow).
 
 ## Prerequisite: base tracing must already work
 
 Memory spans are ordinary spans. They need the same `LATITUDE_API_KEY` / `LATITUDE_PROJECT_SLUG` and exporter as everything else, and they should nest inside the `capture()` boundary that already wraps the request/agent turn so they attach to the right trace and session.
 
-- **If the app is not tracing to Latitude yet**, stop and run **`latitude-telemetry`** first (account, config, MCP discovery, SDK-vs-OTLP decision, the plan-and-wait contract, and the verification read-back loop all live there). Then return here.
-- **This skill does not repeat that machinery.** It adds only the memory-specific parts: the gate, the store/record model, where and when to emit, the memory helpers, and how to verify on the Memory page. For secret handling, MCP-assisted config, the plan/approval contract, and the MCP → CLI → API read-back order, defer to `latitude-telemetry`.
+- **If the app is not tracing to Latitude yet**, finish the main `SKILL.md` workflow for base tracing first (account, config, MCP discovery, the SDK-vs-OTLP decision, the plan-and-wait contract, and the verification read-back loop all live there). Then apply this guide.
+- **This guide does not repeat that machinery.** It adds only the memory-specific parts: the gate, the store/record model, where and when to emit, the memory helpers, and how to verify on the Memory page. For secret handling, MCP-assisted config, the plan/approval contract, and the MCP → CLI → API read-back order, follow `SKILL.md`.
 
 ## Does this app have long-term memory?
 
-This is the first decision and the most important one. Long-term memory is **state the agent persists and reloads across separate interactions** — it outlives a single request or session and is read back later, sometimes by a different session or a different user. If the app has none, there is nothing for this skill to do; base tracing already captures everything.
+This is the first decision and the most important one. Long-term memory is **state the agent persists and reloads across separate interactions** — it outlives a single request or session and is read back later, sometimes by a different session or a different user. If the app has none, there is nothing to instrument for memory; base tracing already captures everything.
 
 **This IS long-term memory (instrument it):**
 
@@ -96,11 +93,11 @@ There is no duplicate-span risk to manage here — since almost nothing emits me
 
 ## Workflow
 
-Reuse `latitude-telemetry`'s discipline: clarify material gaps one at a time, **present a plan and wait for explicit approval** before editing code, never inline secrets, and verify against real runs rather than declaring done at compile time. The memory-specific steps:
+Reuse the main `SKILL.md` discipline: clarify material gaps one at a time, **present a plan and wait for explicit approval** before editing code, never inline secrets, and verify against real runs rather than declaring done at compile time. The memory-specific steps:
 
 1. **Audit the memory layer.** Find the store and its call sites for read, write, and delete. Record: what the store is (files / db / vector / kv / provider), how a logical store maps to a `store.id` (especially for per-user memory), what a record is and its stable id, and the content-capture decision — default it **on** (see attribution rules), off only for memory you cannot send to Latitude.
 2. **Map operations.** Map each call site to one of the seven operations (table below).
-3. **Plan, then wait.** Extend the `latitude-telemetry` plan template with: the store type and `store.id` scheme, the content-capture decision (recommend on; note any PII reason to keep it off), the specific call sites to instrument, and how you will verify on the Memory page. Wait for explicit approval.
+3. **Plan, then wait.** Extend the `SKILL.md` plan template with: the store type and `store.id` scheme, the content-capture decision (recommend on; note any PII reason to keep it off), the specific call sites to instrument, and how you will verify on the Memory page. Wait for explicit approval.
 4. **Implement after approval.** Add one span per operation at the store boundary, inside the existing `capture()`. On writes, pass the record's **full new body**, not a delta.
 5. **Verify on the Memory page** (see Verify).
 
@@ -264,7 +261,7 @@ with tracer.start_as_current_span("search_memory") as span:
     )
 ```
 
-Other runtimes (Go, Java, Ruby, .NET, …) set the identical attributes on whatever span they already export to `https://ingest.latitude.so/v1/traces` (see `latitude-telemetry` → Generic OTLP). Only `gen_ai.operation.name` is required; add the rest to unlock more of the Memory page.
+Other runtimes (Go, Java, Ruby, .NET, …) set the identical attributes on whatever span they already export to `https://ingest.latitude.so/v1/traces` (see `SKILL.md` → Other targets → Generic OTLP). Only `gen_ai.operation.name` is required; add the rest to unlock more of the Memory page.
 
 ## Getting attribution right
 
@@ -278,7 +275,7 @@ Beyond the store, record, and full-body rules above, two more decide whether the
 Not done at compile time — only when memory operations show up correctly in Latitude.
 
 - **Emit real operations.** Run the actual flow: at least one turn that **recalls** memory and one that **writes** it, so both a `search_memory` and a mutating span are produced. For short-lived scripts/jobs, `await latitude.flush()` / `latitude.shutdown()` (Python: `latitude.flush()`) before exit so spans flush.
-- **Read it back**, using MCP → CLI → API in the order `latitude-telemetry` defines, and the product surfaces:
+- **Read it back**, using MCP → CLI → API in the order `SKILL.md` defines, and the product surfaces:
   - On the **Spans tab**, the operations classify (`search_memory`, `create_memory`, …) and carry the store/record attributes.
   - On the **Memory page**, the store appears under the expected id, its records show the expected current bodies, and a second write to a record produces a new version and a diff.
   - On the **trace/session detail**, the Memory summary shows tokens read / added / removed.
@@ -287,7 +284,7 @@ Not done at compile time — only when memory operations show up correctly in La
 
 ## Reference
 
-- **`latitude-telemetry`** — base tracing; do it first, and reuse its account/config, plan-and-wait, and verification machinery.
+- **`SKILL.md`** (this skill's main file) — base tracing setup, the plan-and-wait contract, and the verification read-back loop this guide builds on.
 - Latitude docs: `https://docs.latitude.so` (`telemetry/*`, `observability/memory`); `llms.txt` for an index.
 - SDK source: `github.com/latitude-dev/latitude-llm/packages/telemetry/*`.
 
