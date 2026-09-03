@@ -123,8 +123,8 @@ A V1 prompt with `type: agent` and one or more `tools: [latitude/...]` needs mor
 
 ## Multi-turn conversations lose their server-side memory
 
-V1's `prompts.chat(conversationUuid, [...])` implied Latitude stored the conversation history and appended to it server-side. V2 has no such storage: the app must keep the message array itself, keyed by whatever id it uses for `sessionId` (an in-memory `Map` is fine for a small app; use the app's existing session or database layer otherwise). When converting a `prompts.chat` call site, plan for this explicitly — it is not covered by any other step in this workflow and is easy to miss because the V1 code never had to think about it.
+V1's `prompts.chat(conversationUuid, [...])` implied Latitude stored the conversation history and appended to it server-side. V2 has no such storage: the app must keep the message array itself, keyed by whatever id it uses for `sessionId` (an in-memory `Map` is fine for a small app; use the app's existing session or database layer otherwise). When converting a `prompts.chat` call site, plan for this explicitly, since it is not covered by any other step in this workflow and is easy to miss: the V1 code never had to think about it.
 
 ## `json_output` rule condition shape
 
-The `json_output` condition on a rule signal requires an `expectation` field (`"valid"` or `"invalid"`) — `{"type": "json_output"}` alone is rejected with `Invalid input`. Use `expectation: "invalid"` to flag malformed output.
+The `json_output` condition on a rule signal requires an `expectation` field (`"valid"` or `"invalid"`): `{"type": "json_output"}` alone is rejected with `Invalid input`. Use `expectation: "invalid"` to flag malformed output.
