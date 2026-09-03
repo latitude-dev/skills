@@ -112,3 +112,80 @@ data = json.loads(result.response.text)
 ```
 
 Map `parameters` to the function arguments, `customIdentifier` to `session_id` or `user_id`, `result.response.text` to the provider's content accessor, and V1 streaming callbacks (`onEvent`, `onFinished`) to the provider's streaming API consumed inside the `capture()` callback.
+
+
+## `type: agent` with tools: a full example
+
+V1 prompt (OpenAI, an agent that classifies a support message and looks up a policy page before answering):
+
+```
+---
+provider: OpenAI
+model: gpt-4.1-mini
+type: agent
+tools:
+  - latitude/extract
+---
+<system>
+Classify the request, use latitude/extract to consult https://example.com/policy
+when rules matter, then answer. Return ONLY JSON: {"category": "...", "response": "..."}
+</system>
+<user>
+{{username}}
+{{customer_query}}
+</user>
+```
+
+`latitude/extract` has no V2 equivalent, so it becomes a real fetch:
+
+```js
+export const policyLookupTool = {
+  type: "function",
+  function: { name: "lookup_policy", description: "Fetches the policy page as plain text.",
+              parameters: { type: "object", properties: {}, required: [] } },
+}
+
+export async function runPolicyLookup() {
+  const res = await fetch("https://example.com/policy", { signal: AbortSignal.timeout(5000) })
+  const html = await res.text()
+  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 4000)
+}
+```
+
+And the gateway call (`prompts.run` / `prompts.chat`) becomes a two-pass loop, one `capture()` per turn:
+
+```js
+async function runTurn(messages, onDelta) {
+  const first = await client.chat.completions.create({
+    model: MODEL, messages, tools: [policyLookupTool], tool_choice: "auto", stream: true,
+  })
+  let buffered = ""
+  const calls = {}
+  for await (const chunk of first) {
+    const delta = chunk.choices[0]?.delta
+    if (delta?.content) { buffered += delta.content; onDelta(delta.content) }
+    for (const tc of delta?.tool_calls ?? []) {
+      const slot = (calls[tc.index] ??= { id: "", name: "", arguments: "" })
+      if (tc.id) slot.id = tc.id
+      if (tc.function?.name) slot.name += tc.function.name
+      if (tc.function?.arguments) slot.arguments += tc.function.arguments
+    }
+  }
+  const call = Object.values(calls)[0] // the prompt says "never call it more than once"
+  if (!call) { messages.push({ role: "assistant", content: buffered }); return }
+
+  messages.push({ role: "assistant", content: null,
+    tool_calls: [{ id: call.id, type: "function", function: { name: call.name, arguments: call.arguments } }] })
+  messages.push({ role: "tool", tool_call_id: call.id, content: await runPolicyLookup() })
+
+  const second = await client.chat.completions.create({ model: MODEL, messages, stream: true })
+  let finalText = ""
+  for await (const chunk of second) {
+    const piece = chunk.choices[0]?.delta?.content
+    if (piece) { finalText += piece; onDelta(piece) }
+  }
+  messages.push({ role: "assistant", content: finalText })
+}
+```
+
+`onDelta` is the caller's SSE (or equivalent) writer, so streaming to the client keeps working exactly as it did against the V1 gateway. `capture()` wraps one call to `runTurn`, so both passes land as one trace with `system`, `user`, `assistant`, `tool`, `assistant` messages in order.

@@ -113,3 +113,18 @@ Report: the V2 project slug and console URL, the traces verified, the signals cr
 - Short scripts and tests lose their last batch of spans without `flush()` and `shutdown()`.
 - The MCP is OAuth-only; an API key on `api.latitude.so/v1/mcp` gets a 401. Use the key for the SDK, CLI, and REST.
 - Coding agents sometimes pull cached V1 docs. Use `https://docs.latitude.so/llms.txt` as the documentation index.
+
+## `type: agent` with Latitude tools
+
+A V1 prompt with `type: agent` and one or more `tools: [latitude/...]` needs more than a one-line frontmatter mapping. Two things are easy to miss:
+
+- **Latitude-hosted tools have no V2 equivalent.** `latitude/extract`, `latitude/search`, and similar built-ins ran on Latitude's infrastructure. Replace each with a real implementation the app owns (an HTTP call, a database query, whatever the tool actually did), passed to the provider as a normal tool definition.
+- **The tool-call loop is now your code.** Write it as two passes: stream the first completion with the tool definitions attached, buffering any text deltas instead of forwarding them immediately (if the model calls a tool, `content` is typically empty for that turn, so nothing is lost by holding it back); if the model requested a tool call, run it, append the assistant tool-call message and a `role: "tool"` result message, then stream a second completion for the final answer. If it didn't request a tool call, the buffered text from the first pass is the final answer. Wrap both passes in one `capture()` so they land as one trace with `assistant` and `tool` messages in order. See `promptl-to-code.md` for a full example.
+
+## Multi-turn conversations lose their server-side memory
+
+V1's `prompts.chat(conversationUuid, [...])` implied Latitude stored the conversation history and appended to it server-side. V2 has no such storage: the app must keep the message array itself, keyed by whatever id it uses for `sessionId` (an in-memory `Map` is fine for a small app; use the app's existing session or database layer otherwise). When converting a `prompts.chat` call site, plan for this explicitly — it is not covered by any other step in this workflow and is easy to miss because the V1 code never had to think about it.
+
+## `json_output` rule condition shape
+
+The `json_output` condition on a rule signal requires an `expectation` field (`"valid"` or `"invalid"`) — `{"type": "json_output"}` alone is rejected with `Invalid input`. Use `expectation: "invalid"` to flag malformed output.
