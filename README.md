@@ -9,11 +9,18 @@ Agent skills that teach AI coding assistants how to build with [Latitude](https:
 | [latitude-setup](skills/latitude-setup)         | Zero-account onboarding: bootstrap a temporary Latitude account, instrument, verify traces, claim. |
 | [latitude-cli](skills/latitude-cli)             | Install, authenticate, and drive the `latitude` CLI to run Latitude API operations from a terminal.|
 | [latitude-telemetry](skills/latitude-telemetry) | Add Latitude Telemetry instrumentation for TypeScript and Python applications.                     |
+| [latitude-migrate](skills/latitude-migrate)     | Move an app from Latitude V1 (PromptL, gateway, SDK 5.x) to V2: export, convert prompts, instrument, recreate signals and datasets, verify. |
 
 > **`latitude-setup` builds on the other two.** It orchestrates `latitude-cli` (install + auth) and `latitude-telemetry` (instrumentation). The `skills` CLI does not auto-install dependency skills, so add all three when you want the from-scratch onboarding flow:
 >
 > ```sh
 > npx skills add https://github.com/latitude-dev/skills --skill latitude-setup,latitude-cli,latitude-telemetry
+> ```
+>
+> **`latitude-migrate` also depends on `latitude-cli` and `latitude-telemetry`**, so add all three for a V1 to V2 migration:
+>
+> ```sh
+> npx skills add https://github.com/latitude-dev/skills --skill latitude-migrate,latitude-cli,latitude-telemetry
 > ```
 
 ## Installation
