@@ -18,7 +18,7 @@ Files in this skill:
 ## Entry points
 
 - **Invoked directly.** The user asks for a report, dashboard or "how is X doing" page. Run the intake below, skipping any question the request already answers.
-- **Delegated from `latitude-setup`.** Telemetry was just wired and verified, and the setup plan the user approved included the first Artifact as its last item. Auth (`LATITUDE_API_KEY`, `LATITUDE_PROJECT_SLUG` in `.env`) is in place. Skip the intake and build the **first-artifact default** (below) straight away, without asking anything; `latitude-setup` delivers the result in its final handoff together with the claim link. Only ask if the user said they want something other than the default.
+- **After `latitude-setup`.** Setup builds its own first Artifact (a single-session page from its bundled `first-artifact.html`) and does not call this skill. Use this entry when the user, having just finished setup, asks for more: a report over a window, a comparison, or a refreshable dashboard. Auth (`LATITUDE_API_KEY`, `LATITUDE_PROJECT_SLUG` in `.env`) is in place, so skip the preflight; run the intake with the project already known, and treat the **first-artifact default** (below) as the suggested answer to question 1. Remember the project is minutes old: say the window is small and the numbers are a baseline, not a trend.
 - **Refreshing an existing artifact.** The user points at an `artifacts/<slug>.html` that has a refresh script. Run the script, reload the blob, rewrite the findings, done. No intake.
 
 ## Preflight: how will you read Latitude?
@@ -61,7 +61,7 @@ Keep it short. The four core questions below are the whole intake; the project a
 
 State any remaining assumptions in one line and start. No plan approval step: creating a new HTML file is low-risk. Do ask before overwriting an existing artifact the user did not mention.
 
-**First-artifact default** (delegated from `latitude-setup`, or the user says "surprise me"): one-off *Reliability, latency and cost overview* for the last 7 days (or since the first trace if younger), saved to `artifacts/overview.html`, built without further questions. If the project is hours old, say the window is small and the numbers are a baseline, not a trend.
+**First-artifact default** (the user says "surprise me", or has just finished `latitude-setup`): one-off *Reliability, latency and cost overview* for the last 7 days (or since the first trace if younger), saved to `artifacts/overview.html`. If the project is hours old, say the window is small and the numbers are a baseline, not a trend.
 
 ## Modalities
 
