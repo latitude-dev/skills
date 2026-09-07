@@ -1,6 +1,6 @@
 ---
 name: latitude-setup
-description: Zero-account onboarding orchestrator for Latitude. Bootstrap a temporary Latitude account from the terminal (no signup), instrument the app or agent harness (Claude Code, Hermes, OpenClaw, Pi, Prime Intellect) for tracing, verify real traces, clean up, hand back a browser link to claim ownership, and offer a first Artifact (HTML report) from the new traces. Use when someone wants to set up Latitude, install Latitude telemetry, or "try Latitude" and may have no account or API key yet — the landing-page "try it with your agent" flow. If it turns out the user already has an account, API key, or connected Latitude MCP, this skill redirects to latitude-telemetry + latitude-cli instead of creating a temporary account.
+description: Zero-account onboarding orchestrator for Latitude. Bootstrap a temporary Latitude account from the terminal (no signup), instrument the app or agent harness (Claude Code, Hermes, OpenClaw, Pi, Prime Intellect) for tracing, verify real traces, clean up, hand back a browser link to claim ownership, and build the first Artifact (HTML report) from the new traces in the same handoff. Use when someone wants to set up Latitude, install Latitude telemetry, or "try Latitude" and may have no account or API key yet — the landing-page "try it with your agent" flow. If it turns out the user already has an account, API key, or connected Latitude MCP, this skill redirects to latitude-telemetry + latitude-cli instead of creating a temporary account.
 ---
 
 # Latitude Setup (zero-account onboarding)
@@ -9,7 +9,7 @@ Orchestrates the **from-scratch** path: the user has **no Latitude account and n
 
 The **target** is whatever should emit traces: an **app** (instrumented with the Latitude SDKs or an OTLP exporter) or an **agent harness** the user runs locally (Claude Code, Hermes, OpenClaw, Pi, Prime Intellect, each with its own plugin). Everything below applies to both; the steps call out where a harness differs.
 
-This skill depends on two others — **`latitude-cli`** (install + auth + command primitives) and **`latitude-telemetry`** (instrumentation). Read both; this skill only adds the orchestration between them. The optional last step hands off to **`latitude-artifacts`** (an HTML report from the traces you just verified); install it if it is missing (one command, see step 9).
+This skill depends on three others — **`latitude-cli`** (install + auth + command primitives), **`latitude-telemetry`** (instrumentation) and **`latitude-artifacts`** (the first report, step 9). Read them; this skill only adds the orchestration between them.
 
 ## Preflight: don't create a temporary account if the user already has one
 
@@ -25,7 +25,7 @@ The temporary-account bootstrap exists to make onboarding automatic for someone 
 
 1. Use **`latitude-telemetry`** via its "invoked directly" entry point to audit and instrument the app against the existing key/project. Use **`latitude-cli`** if you still need to install/authenticate the CLI or discover the project slug (`latitude projects list`).
 2. Finish with `latitude-telemetry`'s verification step: run the user's **real** LLM flow and confirm the traces landed via the Latitude **MCP, CLI, or API**. Do **not** run this skill's bootstrap, claim-link, or delete-and-recreate cleanup — those belong only to the temporary-account flow, and the cleanup would destroy a project the user actually owns.
-3. Once traces are verified, make the same first-artifact offer as step 9 below.
+3. Once traces are verified, build the first Artifact exactly as in step 9 below. The completion contract applies to this path too.
 
 **If genuinely nothing is set up** (no key, no MCP, no existing config) → proceed with the temporary-account flow below.
 
@@ -33,6 +33,8 @@ The temporary-account bootstrap exists to make onboarding automatic for someone 
 
 ## Ground rules
 
+- **Completion contract.** Setup is **not done when traces arrive**, and not done when the claim link is delivered. It is done when the final handoff (step 9) contains, in one message: what was configured, the verified real trace, the claim link and its expiry, any restart the user still owes, **and the first Artifact** (its path and top finding), or, only if the user struck the Artifact from the plan, a one-line offer to build it later. An ending without one of those two is an incomplete run, the same as ending before verification. Do not treat "traces verified" or "claim link sent" as the finish line.
+- **The Artifact is decided in the plan, not at the end.** The plan the user approves in step 4 lists the Artifact as its last item, on by default. Approval of the plan is the go-ahead to build it; there is no second question at the end, and nothing to forget.
 - **Plan, then wait.** Instrumentation goes through `latitude-telemetry`'s "present a plan, wait for explicit approval" contract. Do not edit app code before approval.
 - **Never print raw secrets.** The bootstrap API key must never appear in chat, logs, or commits. The claim link is safe to show (it's the whole point) — the API key is not.
 - **One project, named once.** Bootstrap creates exactly one project. There is no throwaway "testing" project; cleanup is delete + recreate with the same name (see step 7).
@@ -41,7 +43,7 @@ The temporary-account bootstrap exists to make onboarding automatic for someone 
 
 ### 1. Install dependencies
 
-Ensure the `latitude-telemetry` and `latitude-cli` skills are available, and install the `latitude` binary as described in **`latitude-cli` → Install** (OS/ARCH detection, download the matching release asset, place on `PATH`, `chmod +x`). **Only `cli-5.0.0` and later are the real Latitude CLI** — `latitude-cli` explains why earlier `cli-*` tags must be ignored. Confirm with `latitude --version` (expect ≥ 5.0.0).
+Ensure the `latitude-telemetry`, `latitude-cli` and `latitude-artifacts` skills are available (`npx skills add https://github.com/latitude-dev/skills --skill latitude-telemetry,latitude-cli,latitude-artifacts` installs any that are missing; if that fails, continue, and step 9 explains what to do), and install the `latitude` binary as described in **`latitude-cli` → Install** (OS/ARCH detection, download the matching release asset, place on `PATH`, `chmod +x`). **Only `cli-5.0.0` and later are the real Latitude CLI** — `latitude-cli` explains why earlier `cli-*` tags must be ignored. Confirm with `latitude --version` (expect ≥ 5.0.0).
 
 ### 2. Bootstrap a temporary account
 
@@ -105,7 +107,15 @@ If it shows `missing`, `.env` isn't being applied — you're either not running 
 
 Hand off to `latitude-telemetry` to add instrumentation, pointing it at `LATITUDE_PROJECT_SLUG=<projectSlug>`. The key/slug are already provisioned and in `.env`, so **skip that skill's MCP-config discovery detour** — you have the values. Follow its audit → group → clarify → **plan → wait for approval** → implement steps. Do not edit code before the user approves the plan.
 
-**Harness target:** use that skill's "Coding-agent / harness telemetry" entry instead of the app workflow: install the harness plugin the way its docs page says, ask before installing (the harness's prompts, responses and tool I/O will be sent to Latitude) and offer the structural-only mode where one exists. There is no app code to plan; the approval is for the plugin install and the config edits.
+**Add the Artifact to that plan as its last item, before asking for approval**, so the user decides once and up front:
+
+```text
+- Finish: build your first Latitude Artifact, a self-contained HTML baseline report of the traces this setup produces (volume, latency, cost, tokens, tool calls), saved to artifacts/overview.html. Say "skip the artifact" to leave it out.
+```
+
+`go ahead` on the plan approves this item too. If the user strikes it, note that and keep going; step 9 then ends with an offer instead of a report.
+
+**Harness target:** use that skill's "Coding-agent / harness telemetry" entry instead of the app workflow: install the harness plugin the way its docs page says, ask before installing (the harness's prompts, responses and tool I/O will be sent to Latitude) and offer the structural-only mode where one exists. There is no app code to plan; the approval is for the plugin install, the config edits, and the same Artifact line item.
 
 `latitude-telemetry`'s workflow ends with its own "verify real traces land" step. In this orchestration that verification loop is steps 5–6 below — and step 7 then extends it with the temporary-account cleanup — so drive the trace-checking from here rather than verifying twice.
 
@@ -136,26 +146,28 @@ latitude projects create --name "<the exact same project name from step 2>"
 
 A successful `projects delete` returns HTTP 204 (no body), which the CLI renders as a placeholder like `{ bytes: 0, mimeType: text/plain, saved_file: download.txt, status: success }` — **that `status: success` is the delete succeeding**, not an error or a file download. Then run the user's code **once more** to produce a single clean set of real traces. Confirm with `latitude traces list` again.
 
-### 8. Hand back the claim link
+### 8. Prepare the claim link
 
-Present the claim link to the user (safe to show) and tell them to open it in a browser to claim ownership of the temporary account — that makes them the owner and stops it from expiring. Mention its expiry (unclaimed temp accounts are deleted then). If you passed an email, note the link was also sent there.
+The claim link is safe to show (it's the whole point); the API key is not. Have the link, its expiry and, if you passed an email, the note that it was also mailed, ready for the handoff in step 9. Do not send them yet: the claim link and the Artifact go out together.
 
-Do **not** print the API key. The final state: instrumented app or harness, one clean project of verified real traces, and a working claim link — with the user never having touched the Latitude UI first.
+### 9. Build the first Artifact and hand everything back in one message
 
-### 9. Offer a first artifact
+Telemetry is live, so the same agent can now *read* it. Delegate to the **`latitude-artifacts`** skill via its "delegated from `latitude-setup`" entry point. The approved plan is the go-ahead: auth and the project slug are already in `.env`, so the skill skips discovery and its intake and builds its *first-artifact default* (a reliability, latency and cost overview over the traces so far, saved to `artifacts/overview.html`) without asking anything. The project is minutes old, so the report is a baseline, not a trend, and the skill says so in the page.
 
-Telemetry is live, so the same agent can now *read* it. Right after the claim link, offer one thing, in one line, with the default marked:
+If `latitude-artifacts` is not installed, install it now (`npx skills add https://github.com/latitude-dev/skills --skill latitude-artifacts`). If that fails (no network, no `npx`), read the skill straight from the repo or the docs page (<https://docs.latitude.so/more/artifacts.md>) and build a simpler single-file report by hand from a few `latitude analytics query` calls. Report a blocker only if you genuinely cannot read the project's data; never silently drop the Artifact.
 
-> Want a first **Artifact** now: a self-contained HTML report of what just landed (volume, latency, cost, tool calls), built from your traces? `Yes (default)` / `Not now`
+Then send **one** final message with all of the following. Every line is required; the last one has two forms:
 
-On **yes**, delegate to the **`latitude-artifacts`** skill via its "delegated from `latitude-setup`" entry point. That yes is the go-ahead: auth and the project slug are already in `.env`, so the skill skips discovery and its intake and builds its *first-artifact default* (a reliability, latency and cost overview over the traces so far, saved to `artifacts/overview.html`) without asking again. It only asks questions if the user says they want something other than the default. Remember the project is minutes old: the artifact is a baseline, not a trend, and the skill says so.
-
-On **not now**, mention that they can ask for one any time ("build me an artifact of …") and point at the docs: <https://docs.latitude.so/more/artifacts.md>.
-
-If `latitude-artifacts` is not installed, install it before making the offer:
-
-```bash
-npx skills add https://github.com/latitude-dev/skills --skill latitude-artifacts
+```text
+Latitude is set up.
+- Configured: <what changed: SDK/plugin, files, profile>. <Restart requirement, if any.>
+- Verified: <the real run that produced traces> landed in project "<name>" (<n> traces, <models/tools seen>).
+- Claim your workspace: <claim link>. Expires <date, time UTC>; unclaimed temporary organizations are deleted then. <"Also emailed to <address>." if applicable.>   (temporary-account flow only; omit on the existing-account path)
+- Your first Artifact: artifacts/overview.html (open it in a browser). Top finding: <one sentence from the report>.
+    or, only if the user struck it from the plan:
+- Want a first Artifact later? Ask: "build me an artifact of <question>" (docs: https://docs.latitude.so/more/artifacts.md).
 ```
 
-If that fails (no network, no `npx`), skip the offer and just mention the docs link.
+Do **not** print the API key. Do not wait for the user to claim the account before building or sending the Artifact. Do not split this into "claim link now, Artifact after you answer": that split is exactly how the Artifact gets dropped.
+
+Before sending, check the message against the completion contract in Ground rules: configured, verified, claim link with expiry, restart note if owed, Artifact path with top finding or the one-line offer. If any is missing, the run is not finished.
