@@ -18,7 +18,7 @@ Files in this skill:
 ## Entry points
 
 - **Invoked directly.** The user asks for a report, dashboard or "how is X doing" page. Run the intake below, skipping any question the request already answers.
-- **Delegated from `latitude-setup`.** Telemetry was just wired and verified, and the user already said yes to the first-artifact offer, which described the default. Auth (`LATITUDE_API_KEY`, `LATITUDE_PROJECT_SLUG` in `.env`) is in place. Skip the intake and build the **first-artifact default** (below) straight away; only ask if the user said they want something else.
+- **Delegated from `latitude-setup`.** Telemetry was just wired and verified, and the setup plan the user approved included the first Artifact as its last item. Auth (`LATITUDE_API_KEY`, `LATITUDE_PROJECT_SLUG` in `.env`) is in place. Skip the intake and build the **first-artifact default** (below) straight away, without asking anything; `latitude-setup` delivers the result in its final handoff together with the claim link. Only ask if the user said they want something other than the default.
 - **Refreshing an existing artifact.** The user points at an `artifacts/<slug>.html` that has a refresh script. Run the script, reload the blob, rewrite the findings, done. No intake.
 
 ## Preflight: how will you read Latitude?

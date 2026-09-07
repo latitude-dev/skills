@@ -12,7 +12,7 @@ Agent skills that teach AI coding assistants how to build with [Latitude](https:
 | [latitude-migrate](skills/latitude-migrate)     | Move an app from Latitude V1 (PromptL, gateway, SDK 5.x) to V2: export, convert prompts, instrument, recreate signals and datasets, verify. |
 | [latitude-artifacts](skills/latitude-artifacts) | Build Artifacts: self-contained HTML reports and KPI dashboards from your Latitude data (MCP, CLI, API), in the Latitude design language with light and dark themes. |
 
-> **`latitude-setup` builds on the others.** It orchestrates `latitude-cli` (install + auth) and `latitude-telemetry` (instrumentation), and ends by offering a first Artifact through `latitude-artifacts`. The `skills` CLI does not auto-install dependency skills, so add all four when you want the from-scratch onboarding flow:
+> **`latitude-setup` builds on the others.** It orchestrates `latitude-cli` (install + auth) and `latitude-telemetry` (instrumentation), and ends by building a first Artifact through `latitude-artifacts`. The `skills` CLI does not auto-install dependency skills, so add all four when you want the from-scratch onboarding flow:
 >
 > ```sh
 > npx skills add https://github.com/latitude-dev/skills --skill latitude-setup,latitude-cli,latitude-telemetry,latitude-artifacts
