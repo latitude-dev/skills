@@ -210,26 +210,26 @@
     <script id="artifact-data" type="application/json">
       {
         "meta": {
-          "project": "hermes-agent",
-          "projectName": "Hermes Agent",
-          "projectUrl": "https://console.latitude.so/projects/hermes-agent",
-          "generatedAt": "2026-09-07T15:40:00Z",
-          "source": "latitude-telemetry-hermes 0.3.0",
+          "project": "example-project",
+          "projectName": "Example Project",
+          "projectUrl": "https://console.latitude.so/projects/example-project",
+          "generatedAt": "2026-01-01T12:10:00Z",
+          "source": "@latitude-data/telemetry 4.1.0",
           "contentCaptured": true
         },
         "claim": {
-          "url": "https://console.latitude.so/claim/96bccbecad7776621b5dfde4fb4e6a1d07e479977535fd503b1fa2f26e945f33",
-          "expiresAt": "2026-09-14T15:32:00Z",
+          "url": "https://console.latitude.so/claim/REPLACE_WITH_THE_CLAIM_LINK_FROM_ACCOUNT_BOOTSTRAP",
+          "expiresAt": "2026-01-08T12:00:00Z",
           "emailedTo": null
         },
         "trace": {
-          "traceId": "219884ecdb4dcf162b83a321d3fc8717",
-          "url": "https://console.latitude.so/projects/hermes-agent?tab=traces&traceId=219884ecdb4dcf162b83a321d3fc8717",
-          "sessionId": "20260907_153241_9f1c2a",
+          "traceId": "0000000000000000000000000000abcd",
+          "url": "https://console.latitude.so/projects/example-project?tab=traces&traceId=0000000000000000000000000000abcd",
+          "sessionId": "example-session-1",
           "userId": null,
-          "rootSpanName": "hermes.turn",
-          "startTime": "2026-09-07T15:32:41.120Z",
-          "endTime": "2026-09-07T15:32:49.480Z",
+          "rootSpanName": "support-agent.turn",
+          "startTime": "2026-01-01T12:00:00.000Z",
+          "endTime": "2026-01-01T12:00:08.360Z",
           "durationNs": 8360000000,
           "timeToFirstTokenNs": 910000000,
           "spanCount": 4,
@@ -239,40 +239,41 @@
           "tokensCacheRead": 1900,
           "tokensReasoning": 0,
           "costTotalMicrocents": 1240000,
-          "models": ["gpt-5.6-luna"],
+          "models": ["example-model-1"],
           "providers": ["openai"],
-          "serviceNames": ["hermes-agent"],
-          "tags": ["hermes-default"]
+          "serviceNames": ["support-agent"],
+          "tags": ["example"]
         },
         "spans": [
-          { "spanId": "a1", "parentSpanId": null, "name": "hermes.turn", "operation": "invoke_agent", "startTime": "2026-09-07T15:32:41.120Z", "endTime": "2026-09-07T15:32:49.480Z", "statusCode": "ok" },
-          { "spanId": "b2", "parentSpanId": "a1", "name": "chat gpt-5.6-luna", "operation": "chat", "model": "gpt-5.6-luna", "provider": "openai", "startTime": "2026-09-07T15:32:41.300Z", "endTime": "2026-09-07T15:32:44.900Z", "statusCode": "ok", "tokensInput": 1420, "tokensOutput": 96, "costTotalMicrocents": 610000, "timeToFirstTokenNs": 910000000 },
-          { "spanId": "c3", "parentSpanId": "a1", "name": "terminal", "operation": "execute_tool", "toolName": "terminal", "startTime": "2026-09-07T15:32:44.950Z", "endTime": "2026-09-07T15:32:45.400Z", "statusCode": "ok" },
-          { "spanId": "d4", "parentSpanId": "a1", "name": "chat gpt-5.6-luna", "operation": "chat", "model": "gpt-5.6-luna", "provider": "openai", "startTime": "2026-09-07T15:32:45.450Z", "endTime": "2026-09-07T15:32:49.400Z", "statusCode": "ok", "tokensInput": 1421, "tokensOutput": 116, "costTotalMicrocents": 630000, "timeToFirstTokenNs": 780000000 }
+          { "spanId": "span-1", "parentSpanId": null, "name": "support-agent.turn", "operation": "invoke_agent", "startTime": "2026-01-01T12:00:00.000Z", "endTime": "2026-01-01T12:00:08.360Z", "statusCode": "ok" },
+          { "spanId": "span-2", "parentSpanId": "span-1", "name": "chat example-model-1", "operation": "chat", "model": "example-model-1", "provider": "openai", "startTime": "2026-01-01T12:00:00.180Z", "endTime": "2026-01-01T12:00:03.780Z", "statusCode": "ok", "tokensInput": 1420, "tokensOutput": 96, "costTotalMicrocents": 610000, "timeToFirstTokenNs": 910000000 },
+          { "spanId": "span-3", "parentSpanId": "span-1", "name": "lookup_order", "operation": "execute_tool", "toolName": "lookup_order", "startTime": "2026-01-01T12:00:03.830Z", "endTime": "2026-01-01T12:00:04.280Z", "statusCode": "ok" },
+          { "spanId": "span-4", "parentSpanId": "span-1", "name": "chat example-model-1", "operation": "chat", "model": "example-model-1", "provider": "openai", "startTime": "2026-01-01T12:00:04.330Z", "endTime": "2026-01-01T12:00:08.280Z", "statusCode": "ok", "tokensInput": 1421, "tokensOutput": 116, "costTotalMicrocents": 630000, "timeToFirstTokenNs": 780000000 }
         ],
         "conversation": {
-          "systemInstructions": "You are Hermes, a terminal-native agent. Prefer tools over guessing. Keep answers short.",
+          "systemInstructions": "You are a support agent for an online shop. Use tools to look up orders before answering. Keep answers short.",
           "input": [
-            { "role": "user", "content": "Latitude telemetry verification: use the terminal tool to run printf latitude-telemetry-ok, then respond with that exact output." }
+            { "role": "user", "content": "Where is my order 12345?" }
           ],
           "output": [
-            { "role": "assistant", "content": "latitude-telemetry-ok" }
+            { "role": "assistant", "content": "Order 12345 shipped yesterday and should arrive tomorrow." }
           ]
         },
         "tools": {
           "offered": [
-            { "name": "terminal", "description": "Run a shell command and return its output." },
-            { "name": "read_file", "description": "Read a file from the workspace." },
-            { "name": "web_search", "description": "Search the web." }
+            { "name": "lookup_order", "description": "Look up an order by id." },
+            { "name": "cancel_order", "description": "Cancel an order that has not shipped." },
+            { "name": "search_docs", "description": "Search the help center." }
           ],
           "calls": [
-            { "name": "terminal", "input": "{\"command\": \"printf latitude-telemetry-ok\"}", "output": "latitude-telemetry-ok", "durationNs": 450000000, "statusCode": "ok" }
+            { "name": "lookup_order", "input": "{\"orderId\": \"12345\"}", "output": "{\"status\": \"shipped\", \"eta\": \"tomorrow\"}", "durationNs": 450000000, "statusCode": "ok" }
           ]
         },
         "memory": null,
         "notes": [
-          "One turn, two model calls around one tool call: the agent asked the model, ran the terminal tool, then asked the model to phrase the answer.",
-          "1,900 of 2,841 input tokens were served from the provider cache, which is why the second call cost about the same as the first despite a longer context."
+          "One turn, two model calls around one tool call: the agent asked the model, looked the order up, then asked the model to phrase the answer.",
+          "1,900 of 2,841 input tokens were served from the provider cache, which is why the second call cost about the same as the first despite a longer context.",
+          "No user id is set yet; adding one would show usage and cost per customer."
         ]
       }
     </script>
