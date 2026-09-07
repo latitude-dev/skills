@@ -21,25 +21,35 @@ The **target** is whatever should emit traces: an **app** (instrumented with the
 
 This skill depends on **`latitude-cli`** (install + auth + command primitives) and **`latitude-telemetry`** (instrumentation). Read both; this skill adds the orchestration between them. The first Artifact needs nothing beyond this skill's own `first-artifact.html` template and the CLI. For richer or refreshable reports later, the separate `latitude-artifacts` skill exists; it is not needed here.
 
-## Preflight: don't create a temporary account if the user already has one
+## Preflight: existing account, or create one? Decide in one question, never by asking for a key
 
-The temporary-account bootstrap exists to make onboarding automatic for someone with **nothing set up yet**. A user who already has a Latitude account can land on this skill by mistake, and routing them through a redundant temporary org plus a claim step is worth avoiding when you can. So before bootstrapping anything, infer from the environment whether an account already exists, and **redirect instead of bootstrapping** if it clearly does:
+The temporary-account bootstrap exists so that someone with **nothing set up yet** gets going without a signup. A user who already has a Latitude account can also land here, and routing them through a redundant temporary org is worth avoiding. Decide which case you are in with the rules below. **Whatever you find, this skill never ends a turn with "I need your `LATITUDE_API_KEY` and project slug".** Asking for a key is the one outcome that defeats the purpose: the key either exists already, or the bootstrap creates it, or the user tells you they have an account and hands it over on their own initiative.
 
-- **An API key is already present**: `LATITUDE_API_KEY` set in the shell, in a `.env` (search the app root and its parents), in the app's secret manager, or in deployment/CI config.
+**The only hard signals that an account exists:**
+
+- **A working API key is already present**: `LATITUDE_API_KEY` with a value in the shell, in a `.env` (search the app root and its parents), in the app's secret manager, in deployment/CI config, or in a harness's own config (`~/.hermes/.env`, the `LATITUDE_*` env block in `~/.claude/settings.json`, `~/.pi/agent/latitude-telemetry.json`, the `Authorization` header in the `diagnostics.otel` block of `~/.openclaw/openclaw.json`).
 - **A Latitude MCP is connected and authenticated** in this harness: an OAuth-authorized Latitude MCP means the user already has a workspace.
-- **Existing Latitude config/instrumentation in the repo**: a `LATITUDE_PROJECT_SLUG`, a `@latitude-data/telemetry` / `latitude-telemetry` dependency, or an OTLP exporter already pointed at `ingest.latitude.so`.
-- **A harness already wired to Latitude**: `LATITUDE_API_KEY` in `~/.hermes/.env`, a `LATITUDE_*` env block in `~/.claude/settings.json`, `~/.pi/agent/latitude-telemetry.json`, or a `diagnostics.otel` block in `~/.openclaw/openclaw.json` pointing at `ingest.latitude.so`.
 - **The user says so**: they mention being signed in, having a project, or already using Latitude.
 
-**If any of these hold → do NOT bootstrap.** The user has an account; take the direct path:
+**What is not a signal:** a project slug, a `LATITUDE_PROJECT` setting, an enabled plugin, a `@latitude-data/telemetry` / `latitude-telemetry` dependency, or an OTLP exporter pointed at `ingest.latitude.so` **without a key next to it**. That is a placeholder, an example, or a leftover from an earlier attempt. It tells you where to write the values, not that an account exists. Do not turn it into "the setup is half done, give me the key".
+
+**If a hard signal holds → do NOT bootstrap.** The user has an account; take the direct path:
 
 1. Use **`latitude-telemetry`** via its "invoked directly" entry point to audit and instrument the app against the existing key/project. Use **`latitude-cli`** if you still need to install/authenticate the CLI or discover the project slug (`latitude projects list`).
 2. Finish with `latitude-telemetry`'s verification step: run the user's **real** LLM flow and confirm the traces landed via the Latitude **MCP, CLI, or API**. Do **not** run this skill's bootstrap, claim-link, or delete-and-recreate cleanup: those belong only to the temporary-account flow, and the cleanup would destroy a project the user actually owns.
 3. Build the first Artifact exactly as in step 9 (without the `claim` block) and hand everything back as in step 10. The Outcome above applies to this path too.
 
-**If genuinely nothing is set up** (no key, no MCP, no existing config) → proceed with the temporary-account flow below.
+**If no hard signal holds and the user is present → ask one question, then act.** For a harness target, ask it in the same message as the content-consent question and the Artifact line from step 4 (one message, all decisions, before anything is created or installed). The temporary account is the default:
 
-**If you can't confidently tell either way → default to bootstrapping; don't stall on it.** This detection is best-effort. A bootstrapped temporary organization is low-stakes and recoverable: the claim link lets it be redeemed later, and it can be claimed even into an account the user already has, so creating one for a user who turned out to already have an account is a minor, fixable outcome, not a failure. The overriding goal is to get the target instrumented and emitting real traces to Latitude **autonomously**; don't block that on perfect account detection. If the user is right there and a one-line question is cheap, you may confirm first, but absent a clear signal, bootstrap and keep going.
+```text
+Do you already have a Latitude account?
+  (a) No, create a temporary one for me now, no signup, I'll claim it later   (default)
+  (b) Yes, I'll give you its API key and project slug
+```
+
+On (a), or no answer, or "just do it": bootstrap (step 2). On (b): wait for the values, put them where step 3 says, and take the direct path above. Do not ask any other question about accounts, keys or projects.
+
+**If no hard signal holds and the user is not there to answer → bootstrap.** A bootstrapped temporary organization is low-stakes and recoverable: the claim link lets it be redeemed later, and it can be claimed even into an account the user already has, so creating one for a user who turned out to already have an account is a minor, fixable outcome, not a failure. The overriding goal is to get the target instrumented and emitting real traces to Latitude **autonomously**; never block that on a missing key.
 
 ## Ground rules
 
@@ -132,7 +142,7 @@ If it shows `missing`, `.env` isn't being applied: you're either not running fro
 
 `go ahead` on the plan approves this item too.
 
-**Harness target.** Use `latitude-telemetry`'s "Coding-agent / harness telemetry" entry instead of the app workflow: install the harness plugin the way its docs page says. There is no app code to plan, so the consent moment is the question you ask before installing: the harness's prompts, responses and tool I/O will be sent to Latitude, and the structural-only mode is available where one exists. Put the Artifact in that same question as default scope, in one line, so it is decided here:
+**Harness target.** Use `latitude-telemetry`'s "Coding-agent / harness telemetry" entry instead of the app workflow: install the harness plugin the way its docs page says. There is no app code to plan, so the consent moment is the question you ask before installing: the harness's prompts, responses and tool I/O will be sent to Latitude, and the structural-only mode is available where one exists. If you already asked it together with the account question in Preflight, do not ask again. Put the Artifact in that same question as default scope, in one line, so it is decided here:
 
 ```text
 I'll also build a first Artifact (artifacts/first-session.html) showing what Latitude captured from the verification run. Say "skip the artifact" to leave it out.
