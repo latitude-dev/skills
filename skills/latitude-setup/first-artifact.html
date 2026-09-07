@@ -318,8 +318,44 @@
         return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c])
       }
       function clip(text, max = 1500) {
+        if (text == null) return ""
         const s = typeof text === "string" ? text : JSON.stringify(text, null, 2)
         return s.length > max ? `${s.slice(0, max)}\n… (${s.length - max} more characters, open the trace in Latitude for the full content)` : s
+      }
+      // Messages arrive in whatever shape the CLI returned them: a plain string, a JSON string,
+      // {role, content}, or the GenAI shape {role, parts:[{type:"text"|"tool_call"|"tool_call_response", …}]}.
+      function parseMaybeJson(value) {
+        if (typeof value !== "string") return value
+        const t = value.trim()
+        if (!(t.startsWith("[") || t.startsWith("{"))) return value
+        try { return JSON.parse(t) } catch {
+          // A JSON string clipped mid-way (a long system prompt, usually): salvage the text fields.
+          const texts = [...t.matchAll(/"(?:content|text)"\s*:\s*"((?:[^"\\]|\\.)*)"?/g)].map((m) => { try { return JSON.parse(`"${m[1]}"`) } catch { return m[1] } })
+          return texts.length ? texts.join("\n\n") : value
+        }
+      }
+      function partToText(part) {
+        if (part == null) return ""
+        if (typeof part === "string") return part
+        if (part.type === "text" || part.text != null) return part.content ?? part.text ?? ""
+        if (part.type === "tool_call") return `→ ${part.name || "tool"}(${typeof part.arguments === "string" ? part.arguments : JSON.stringify(part.arguments ?? {})})`
+        if (part.type === "tool_call_response") return `← ${typeof part.response === "string" ? part.response : JSON.stringify(part.response ?? "")}`
+        if (part.content != null) return typeof part.content === "string" ? part.content : JSON.stringify(part.content)
+        return JSON.stringify(part)
+      }
+      function messageText(message) {
+        const m = parseMaybeJson(message)
+        if (m == null) return ""
+        if (typeof m === "string") return m
+        if (Array.isArray(m)) return m.map(messageText).filter(Boolean).join("\n\n")
+        if (Array.isArray(m.parts)) return m.parts.map(partToText).filter(Boolean).join("\n")
+        if (m.content != null) return Array.isArray(m.content) ? m.content.map(partToText).filter(Boolean).join("\n") : typeof m.content === "string" ? m.content : JSON.stringify(m.content)
+        if (m.text != null) return String(m.text)
+        return JSON.stringify(m)
+      }
+      function messageRole(message, fallback) {
+        const m = parseMaybeJson(message)
+        return (m && typeof m === "object" && !Array.isArray(m) && m.role) || fallback
       }
       function spanKind(span) {
         const op = span.operation || ""
@@ -367,26 +403,32 @@
       }
 
       function message(role, content) {
-        return `<div class="msg"><div class="role">${esc(role)}</div><pre>${esc(clip(content))}</pre></div>`
+        const text = messageText(content)
+        if (!text) return ""
+        return `<div class="msg"><div class="role">${esc(role)}</div><pre>${esc(clip(text))}</pre></div>`
+      }
+      function asList(value) {
+        const v = parseMaybeJson(value)
+        return v == null ? [] : Array.isArray(v) ? v : [v]
       }
       function conversationBlock(conv, captured) {
         if (!captured) return card("The conversation", '<div class="empty">Content capture is off for this setup, so prompts, responses and tool payloads stay on your machine. Latitude still records timing, tokens, cost, models and tool names. Turn content on when you want to read the conversations behind the numbers.</div>')
         if (!conv) return ""
-        const parts = []
-        if (conv.systemInstructions) parts.push(message("system", conv.systemInstructions))
-        for (const m of conv.input || []) parts.push(message(m.role || "user", m.content))
-        for (const m of conv.output || []) parts.push(message(m.role || "assistant", m.content))
-        return card("The conversation, as the model saw it", parts.join("") || '<div class="empty">No messages on this trace.</div>')
+        const blocks = []
+        for (const m of asList(conv.systemInstructions)) blocks.push(message(messageRole(m, "system"), m))
+        for (const m of asList(conv.input)) blocks.push(message(messageRole(m, "user"), m))
+        for (const m of asList(conv.output)) blocks.push(message(messageRole(m, "assistant"), m))
+        return card("The conversation, as the model saw it", blocks.join("") || '<div class="empty">No messages on this trace.</div>')
       }
 
       function toolsBlock(tools, captured) {
         if (!tools) return ""
-        const offered = (tools.offered || []).map((t) => `<tr><td><code>${esc(t.name)}</code></td><td>${esc(t.description || "")}</td></tr>`).join("")
-        const calls = (tools.calls || [])
+        const offered = asList(tools.offered).map((t) => (typeof t === "string" ? { name: t } : t || {})).map((t) => `<tr><td><code>${esc(t.name || "")}</code></td><td>${esc(t.description || "")}</td></tr>`).join("")
+        const calls = asList(tools.calls)
           .map((c) => `<div class="msg"><div class="role">${esc(c.name)} · ${fmt.ns(c.durationNs)} · <span class="badge ${c.statusCode === "error" ? "error" : "ok"}">${esc(c.statusCode || "ok")}</span></div>${captured ? `<pre>→ ${esc(clip(c.input, 600))}\n← ${esc(clip(c.output, 600))}</pre>` : '<pre>payloads not captured</pre>'}</div>`)
           .join("")
-        const offeredCard = offered ? card(`Tools offered to the model (${(tools.offered || []).length})`, `<table><thead><tr><th>Tool</th><th>Description</th></tr></thead><tbody>${offered}</tbody></table>`, "col-6") : ""
-        const callsCard = card(`Tool calls (${(tools.calls || []).length})`, calls || '<div class="empty">The model did not call a tool in this session.</div>', offered ? "col-6" : "col-12")
+        const offeredCard = offered ? card(`Tools offered to the model (${asList(tools.offered).length})`, `<table><thead><tr><th>Tool</th><th>Description</th></tr></thead><tbody>${offered}</tbody></table>`, "col-6") : ""
+        const callsCard = card(`Tool calls (${asList(tools.calls).length})`, calls || '<div class="empty">The model did not call a tool in this session.</div>', offered ? "col-6" : "col-12")
         return offeredCard + callsCard
       }
 
@@ -442,25 +484,31 @@
       // ---------- Compose ----------
       const DATA = JSON.parse(document.getElementById("artifact-data").textContent)
 
+      function safe(label, fn) {
+        try { return fn() } catch (error) {
+          console.error(`first-artifact: ${label} failed`, error)
+          return `<section class="section"><h2>${esc(label)}</h2><div class="grid"><div class="card col-12"><div class="empty">This section could not be rendered from the data blob (${esc(error && error.message)}). The rest of the page is unaffected.</div></div></div></section>`
+        }
+      }
       function render() {
-        const { meta, claim, trace, spans, conversation, tools, memory, notes } = DATA
+        const { meta = {}, claim, trace = {}, spans = [], conversation, tools, memory, notes } = DATA
         const llmCalls = (spans || []).filter((s) => spanKind(s) === "llm").length
         const toolCalls = (spans || []).filter((s) => spanKind(s) === "tool").length
         document.getElementById("subtitle").textContent = `What Latitude captured from the first real ${meta.source ? `run through ${meta.source}` : "run"}. One session, every model call and tool call inside it.`
         document.getElementById("meta").innerHTML = [`Project <b>${esc(meta.projectName || meta.project)}</b>`, `Captured <b>${esc(fmt.datetime(trace.startTime))}</b>`, `Report generated <b>${esc(fmt.datetime(meta.generatedAt))}</b>`].join("<span aria-hidden='true'>·</span>")
         document.getElementById("root").innerHTML = [
-          claimBanner(claim),
-          section("At a glance", null,
+          safe("Claim", () => claimBanner(claim)),
+          safe("At a glance", () => section("At a glance", null,
             kpi("Model calls", fmt.int(llmCalls), (trace.models || []).join(", ")) +
-            kpi("Tool calls", fmt.int(toolCalls), (tools && tools.offered ? `${tools.offered.length} tools offered` : "")) +
+            kpi("Tool calls", fmt.int(toolCalls), (tools && tools.offered ? `${asList(tools.offered).length} tools offered` : "")) +
             kpi("Tokens", `${fmt.int((trace.tokensInput || 0) + (trace.tokensOutput || 0))}`, `${fmt.int(trace.tokensInput)} in · ${fmt.int(trace.tokensOutput)} out`) +
-            kpi("Cost", fmt.microcents(trace.costTotalMicrocents), `${fmt.ns(trace.durationNs)} end to end · TTFT ${fmt.ns(trace.timeToFirstTokenNs)}`)),
-          section("What happened, in order", "Each bar is one span. Latitude keeps the parent/child structure, so nested tool calls and sub-agents show up under the turn that made them.", card(null, timeline(trace, spans))),
-          section("Details", null, identityBlock(trace, meta) + tokensBlock(trace)),
-          section("Content", meta.contentCaptured ? "Prompts, responses and tool payloads are captured, so you can read exactly what the model saw and did. Long values are clipped here; the trace in Latitude has everything." : null, conversationBlock(conversation, meta.contentCaptured) + toolsBlock(tools, meta.contentCaptured)),
-          section("Memory", null, memoryBlock(memory)),
-          section("Notes from your agent", null, notes && notes.length ? card(null, `<ul class="findings">${notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>`) : ""),
-          section("What comes next", null, unlocks(meta)),
+            kpi("Cost", fmt.microcents(trace.costTotalMicrocents), `${fmt.ns(trace.durationNs)} end to end · TTFT ${fmt.ns(trace.timeToFirstTokenNs)}`))),
+          safe("What happened, in order", () => section("What happened, in order", "Each bar is one span. Latitude keeps the parent/child structure, so nested tool calls and sub-agents show up under the turn that made them.", card(null, timeline(trace, spans)))),
+          safe("Details", () => section("Details", null, identityBlock(trace, meta) + tokensBlock(trace))),
+          safe("Content", () => section("Content", meta.contentCaptured ? "Prompts, responses and tool payloads are captured, so you can read exactly what the model saw and did. Long values are clipped here; the trace in Latitude has everything." : null, conversationBlock(conversation, meta.contentCaptured) + toolsBlock(tools, meta.contentCaptured))),
+          safe("Memory", () => section("Memory", null, memoryBlock(memory))),
+          safe("Notes from your agent", () => section("Notes from your agent", null, notes && notes.length ? card(null, `<ul class="findings">${asList(notes).map((n) => `<li>${esc(n)}</li>`).join("")}</ul>`) : "")),
+          safe("What comes next", () => section("What comes next", null, unlocks(meta))),
         ].join("")
         document.getElementById("footer").innerHTML = `First-run baseline from a single session, not a trend. <a href="${esc(trace.url)}" target="_blank" rel="noopener">Open this trace in Latitude</a> · <a href="${esc(meta.projectUrl)}" target="_blank" rel="noopener">Open the project</a>. Durations from span timestamps, cost as estimated by Latitude.`
       }

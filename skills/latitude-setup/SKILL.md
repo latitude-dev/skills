@@ -222,11 +222,11 @@ The user has not opened Latitude yet. This page is where they first see what the
    - `claim`: the claim link, its expiry and the email it was sent to, from step 2. **Temporary-account flow only**; set it to `null` on the existing-account path.
    - `trace`: the row from `traces list` / `traces get`, plus `url` = `https://console.latitude.so/projects/<slug>?tab=traces&traceId=<traceId>`.
    - `spans`: every span from `listSpans` with its `spanId`, `parentSpanId`, `name`, `operation`, `model`, `provider`, `toolName`, `startTime`, `endTime`, `statusCode`, tokens and cost fields.
-   - `conversation`: system instructions, input messages and output messages from `traces get` or the LLM span's `getSpan`. Include them only when `meta.contentCaptured` is `true`, clipped to a few thousand characters. **Never paste secrets, API keys or credentials that appear in a message; redact them.**
+   - `conversation`: `systemInstructions`, `inputMessages` and `outputMessages` from `traces get` or the LLM span's `getSpan`, pasted **exactly as returned** (the GenAI shape with `role` and `parts` is fine; so is `{ role, content }`). Include them only when `meta.contentCaptured` is `true`. If a message is very long, shorten the text inside its `content` field and keep the JSON valid; never cut a JSON string in the middle. **Never paste secrets, API keys or credentials that appear in a message; redact them.**
    - `tools.offered`: `toolDefinitions` (name and description) from the LLM span; `tools.calls`: name, input, output, duration and status from each tool span's `getSpan`, payloads only when content is captured.
    - `memory`: from `getMemory` when there are records; otherwise `null`.
    - `notes`: two to four sentences you write about this session: what the run did, what stands out in the numbers, what is not set yet (session id, user id, tags) and what setting it would unlock. Facts from the data, no filler.
-3. Check the file: the blob still parses (`python3 -c 'import json,sys; ...'` or `node -e` on the extracted text, or open it in a browser and look for a console error), and the page shows the claim button when `claim` is set.
+3. **Render it before calling it done.** A parsing blob is not a working page. Open the file in a browser (headless is fine: `google-chrome --headless --dump-dom file:///…/first-session.html`, or a Playwright/Puppeteer one-liner) and confirm there is no console error, every section has content, and the claim button shows when `claim` is set. If a section reports "could not be rendered", fix that part of the blob.
 
 **In hand:** `artifacts/first-session.html` with the real session, plus its absolute path.
 
