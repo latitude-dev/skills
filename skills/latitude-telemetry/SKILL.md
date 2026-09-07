@@ -1,6 +1,6 @@
 ---
 name: latitude-telemetry
-description: Add or review Latitude Telemetry for LLM apps. Use for Latitude tracing, LLM observability, missing traces, OpenTelemetry/OTLP integration in TypeScript, Python, and other runtimes. Covers instrumenting a new project under an existing Latitude account (invoked directly) as well as the latitude-setup hand-off, discovering config via the Latitude MCP, and verifying that real traces land via the Latitude MCP, CLI, or API.
+description: Add or review Latitude Telemetry for LLM apps and agent harnesses. Use for Latitude tracing, LLM observability, missing traces, OpenTelemetry/OTLP integration in TypeScript, Python, and other runtimes, any documented provider or framework (OpenAI, Anthropic, Bedrock, Vertex, LangChain, LlamaIndex, Vercel AI SDK, Pydantic AI, Mastra, and more), and harness plugins for Claude Code, Hermes, OpenClaw, Pi, and Prime Intellect. Covers instrumenting a new project under an existing Latitude account (invoked directly) as well as the latitude-setup hand-off, discovering config via the Latitude MCP, and verifying that real traces land via the Latitude MCP, CLI, or API.
 ---
 
 # Latitude Telemetry
@@ -117,39 +117,87 @@ When asking the user to provide config, explain what each value is and where to 
 
 Never ask for real secret values in chat if the project has an existing secret manager. Ask where the user wants them stored, and add placeholders only to env examples/docs.
 
+## Which integration applies?
+
+Match the app's stack to one row before writing code. The Latitude docs page for the row is the source of truth for the exact snippet (`https://docs.latitude.so/telemetry/<path>.md` returns the readable version); the mechanism column tells you which section of this skill to follow. **The set grows over time, so treat this table as a snapshot and check `https://docs.latitude.so/llms.txt` for pages it does not list.**
+
+| Target | TypeScript | Python | Docs page |
+| --- | --- | --- | --- |
+| OpenAI, Azure OpenAI | `createOpenAIInstrumentation(OpenAI)` (Azure reuses it) | `{"openai": openai}` | `providers/openai`, `providers/azure` |
+| OpenAI Agents SDK | `createOpenAIAgentsInstrumentation(OpenAIAgentsSDK)` | `{"openai-agents": agents}` (the only hyphenated Python key) | `frameworks/openai-agents` |
+| Anthropic | `createAnthropicInstrumentation(AnthropicSDK)` | `{"anthropic": anthropic}` | `providers/anthropic` |
+| Amazon Bedrock | `createBedrockInstrumentation(BedrockSDK)` | `{"bedrock": boto3}` | `providers/amazon-bedrock` |
+| Amazon SageMaker | OTLP exporter | `{"sagemaker": boto3}` | `providers/sagemaker` |
+| Cohere | `createCohereInstrumentation(CohereSDK)` | `{"cohere": cohere}` | `providers/cohere` |
+| Together AI | `createTogetherAIInstrumentation(TogetherSDK)` | `{"togetherai": together}` | `providers/together-ai` |
+| Vertex AI | `createVertexAIInstrumentation(VertexAISDK)` | `{"vertexai": vertexai}` | `providers/vertex-ai` |
+| Google AI Platform | `createAIPlatformInstrumentation(AIPlatformSDK)` | `{"aiplatform": aiplatform}` | `providers/google-ai-platform` |
+| Google Gemini (`google-genai`) | OTLP exporter | `{"google_generativeai": genai}` | `providers/gemini` |
+| Groq, Mistral, Ollama, Replicate, watsonx, Aleph Alpha, Transformers | OTLP exporter | `{"groq": groq}`, `{"mistralai": mistralai}`, `{"ollama": ollama}`, `{"replicate": replicate}`, `{"watsonx": ibm_watsonx_ai}`, `{"aleph_alpha": aleph_alpha_client}`, `{"transformers": transformers}` | `providers/<name>` |
+| LangChain | `createLangChainInstrumentation(CallbackManagerModule)` with `@langchain/core/callbacks/manager` | `{"langchain": langchain_core}` | `frameworks/langchain` |
+| LlamaIndex | `createLlamaIndexInstrumentation(LlamaIndex)` | `{"llamaindex": llama_index}` | `frameworks/llamaindex` |
+| Google ADK, CrewAI, Haystack, LiteLLM | not available | `{"google_adk": google.adk}`, `{"crewai": crewai}`, `{"haystack": haystack}`, `{"litellm": litellm}` | `frameworks/<name>` |
+| DSPy | not available | instrument LiteLLM: `{"litellm": litellm}` (no `dspy` key) | `frameworks/dspy` |
+| Pydantic AI | not available | `Latitude(...)` with no instrumentations, then `Agent.instrument_all()` | `frameworks/pydantic-ai` |
+| Strands Agents | not available | env-var OTLP: base URL `https://ingest.latitude.so` (no `/v1/traces`), headers, `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf`, `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental` | `frameworks/strands` |
+| Vercel AI SDK v6 | `Latitude` without instrumentations + per-call `experimental_telemetry: { isEnabled: true, tracer: latitude.getTracer("vercelai") }` | not available | `frameworks/vercel-ai-sdk` |
+| Vercel AI SDK v7 | `Latitude` without instrumentations + `registerTelemetry(new OpenTelemetry())` from `@ai-sdk/otel` (opt-out, no per-call flag); pass the system prompt via top-level `instructions`, not a `system` message | not available | `frameworks/vercel-ai-sdk-v7` |
+| Cloudflare Think | `experimental_telemetry` from `beforeTurn()` with `latitude.getTracer("cloudflare-think", context)`; helpers in `@latitude-data/telemetry/cloudflare`; never `capture.start()` on Workers, never `new Latitude()` inside `beforeTurn()` | not available | `frameworks/cloudflare-think` |
+| Cloudflare AI Gateway | OTLP configured in the gateway dashboard (endpoint + `Authorization` + `x-latitude-project` headers), no SDK | same | `frameworks/cloudflare-ai-gateway` |
+| Mastra | `@mastra/otel-exporter` pointed at `https://ingest.latitude.so/v1/traces` with the two headers, no Latitude SDK | not available | `frameworks/mastra` |
+| Eve | `@vercel/otel` `registerOTel` + `OTLPTraceExporter` to the ingest URL with the two headers, no Latitude SDK | not available | `frameworks/eve` |
+| Flue | `Latitude` without instrumentations + `observe(createOpenTelemetryObserver())` from `@flue/opentelemetry`; content is opt-in via `exportContent()` | not available | `frameworks/flue` |
+| LiveKit Agents | `LatitudeSpanProcessor` attached to LiveKit's own tracer provider (not the `Latitude` class); `disableSmartFilter: true` to keep STT/TTS/VAD spans | same with `LatitudeSpanProcessorOptions(disable_smart_filter=True)` | `frameworks/livekit` |
+| ElevenLabs Agents | instrument your own OpenAI-compatible LLM proxy with the OpenAI instrumentation; STT/TTS are not observable | same | `frameworks/elevenlabs` |
+| Anything else that speaks OTLP (Go, Java, Ruby, .NET, hand-rolled spans) | OTLP exporter | OTLP exporter | `otel-exporter` |
+
+"OTLP exporter" means the app's own OpenTelemetry exporter pointed at `https://ingest.latitude.so/v1/traces` with `Authorization: Bearer <key>` and `X-Latitude-Project: <slug>` (see "Other targets"). Where a row says "not available" for a language, that language uses the OTLP exporter.
+
 ## TypeScript
 
 Install the latest `@latitude-data/telemetry` with the project's package manager. Initialize existing Sentry/Datadog/New Relic/Honeycomb/custom OTel first, then Latitude.
 
+**`instrumentations` is an array of instances created by per-integration factories, each imported from its own subpath.** The older object-map form (`instrumentations: { openai: OpenAI }`) was removed in v4 and makes `latitude.ready` reject with a migration error; do not write it, and migrate it if you find it in the app.
+
 ```ts
 import OpenAI from "openai";
 import { Latitude } from "@latitude-data/telemetry";
+import { createOpenAIInstrumentation } from "@latitude-data/telemetry/instrumentations/openai";
 
 const latitude = new Latitude({
   apiKey: process.env.LATITUDE_API_KEY!,
   project: process.env.LATITUDE_PROJECT_SLUG!,
-  instrumentations: { openai: OpenAI },
+  instrumentations: [createOpenAIInstrumentation(OpenAI)],
 });
 
-await latitude.ready; // optional, use when first-call coverage matters
+await latitude.ready; // await before creating the LLM client when first-call coverage matters
 ```
 
 Use the project's real env validation; the snippet only shows the SDK shape.
 
-**The set of supported instrumentations grows over time — treat any list here as a snapshot, not the source of truth.** Look up the current supported keys and the exact per-provider/framework setup for the app's stack in the Latitude docs (`https://docs.latitude.so`, `telemetry/*`; `llms.txt` for an index) or the telemetry package (`github.com/latitude-dev/latitude-llm/packages/telemetry/*`) rather than relying on memory. Common keys at time of writing include `openai`, `openai-agents`, `anthropic`, `bedrock`, `cohere`, `langchain`, `llamaindex`, `togetherai`, `vertexai`, `aiplatform`. Pass the same SDK module object the app imports. For Anthropic and most namespace packages, prefer `import * as AnthropicSDK from "@anthropic-ai/sdk"` then `instrumentations: { anthropic: AnthropicSDK }`.
+Available factories, one subpath each under `@latitude-data/telemetry/instrumentations/`: `openai`, `openai-agents`, `anthropic`, `bedrock`, `cohere`, `langchain`, `llamaindex`, `togetherai`, `vertexai`, `aiplatform` (factory names are `create<Name>Instrumentation`; see the table above). Pass the same SDK module object the app imports: for namespace packages use `import * as AnthropicSDK from "@anthropic-ai/sdk"`, and for LangChain pass the `@langchain/core/callbacks/manager` module, not the `langchain` package. Providers with no TypeScript factory (Gemini, Groq, Mistral, Ollama, Replicate, SageMaker, watsonx, Aleph Alpha, Transformers) go through the OTLP exporter in TypeScript.
 
-Special cases:
+Special cases (details per row in the table): Vercel AI SDK, Cloudflare Think, Flue and LiveKit initialize Latitude **without** `instrumentations` and wire telemetry through the framework's own hook; Mastra, Eve and Cloudflare AI Gateway need no Latitude SDK at all.
 
-- **Vercel AI SDK:** initialize Latitude without instrumentations; set `experimental_telemetry.isEnabled: true` on each `generateText`, `streamText`, etc. call.
-- **Custom existing OTel:** add `new LatitudeSpanProcessor(apiKey, project)` beside existing processors and call `await registerLatitudeInstrumentations({ instrumentations, tracerProvider })`.
+**Custom existing OTel provider:** add `new LatitudeSpanProcessor(apiKey, project)` beside the existing processors and register the factories against that provider:
 
-Use `capture(name, async () => { ... }, { userId, sessionId, tags, metadata, project })` at use-case boundaries. `project` overrides the constructor default for multi-project routing. `capture()` adds context to instrumented spans; it does not create LLM spans by itself.
+```ts
+import { LatitudeSpanProcessor, registerLatitudeInstrumentations } from "@latitude-data/telemetry";
+import { createOpenAIInstrumentation } from "@latitude-data/telemetry/instrumentations/openai";
+
+await registerLatitudeInstrumentations({
+  instrumentations: [createOpenAIInstrumentation(OpenAI)],
+  tracerProvider: sdk.getTracerProvider(),
+});
+```
+
+Use `capture(name, async () => { ... }, { userId, sessionId, tags, metadata, project })` at use-case boundaries. `project` overrides the constructor default for multi-project routing. `capture()` adds context to instrumented spans; it does not create LLM spans by itself. Do not use `capture.start()` / `scope.end()` on Cloudflare Workers.
 
 For short-lived scripts/jobs, call `await latitude.flush()` or `await latitude.shutdown()` before exit. Do not call `shutdown()` per request in long-lived servers.
 
 ## Python
 
-Requires Python 3.11+. Install the latest `latitude-telemetry` with the project's package manager.
+Requires Python 3.11 or newer. Install the latest `latitude-telemetry` with the project's package manager.
 
 ```python
 import os
@@ -165,7 +213,7 @@ latitude = Latitude(
 
 If an OpenTelemetry provider is already registered, `Latitude(...)` attaches to it. For custom setups, add `LatitudeSpanProcessor` to the existing provider and call `register_latitude_instrumentations(instrumentations={...}, tracer_provider=provider)`.
 
-**As with TypeScript, the supported set changes — verify against the docs, don't trust this list.** Check the current keys and per-provider examples for the app's stack in the Latitude docs (`https://docs.latitude.so`, `telemetry/*`) or the telemetry package. Common keys at time of writing include `openai`, `openai-agents`, `anthropic`, `bedrock`, `cohere`, `langchain`, `llamaindex`, `togetherai`, `vertexai`, `aiplatform`, plus Python-only ones such as `aleph_alpha`, `crewai`, `dspy`, `google_generativeai`, `groq`, `haystack`, `litellm`, `mistralai`, `ollama`, `replicate`, `sagemaker`, `transformers`, `watsonx`. Pass imported module objects, not string lists.
+Python keeps the dictionary form: key → the imported module object (never a string). Keys at time of writing: `openai`, `openai-agents` (module `agents`), `anthropic`, `bedrock` and `sagemaker` (both `boto3`), `cohere`, `togetherai` (module `together`), `vertexai` and `aiplatform` (both from `google-cloud-aiplatform`), `google_generativeai` (module `genai` from `google-genai`), `google_adk` (`google.adk`), `langchain` (`langchain_core`), `llamaindex` (`llama_index`), `crewai`, `haystack` (from `haystack-ai`), `litellm` (also the key for DSPy), `groq`, `mistralai`, `ollama`, `replicate`, `watsonx` (`ibm_watsonx_ai`), `aleph_alpha` (`aleph_alpha_client`), `transformers`. Several keys differ from the package name; copy the exact pair from the table or the docs page. Pydantic AI and Strands do not use a key (see the table).
 
 Use `capture()` as a wrapper with snake_case options, especially when context is per request:
 
@@ -184,12 +232,14 @@ For short-lived processes, call `latitude.flush()` or `latitude.shutdown()` befo
 
 ## Other targets
 
-- **Generic OTLP / other languages:** send traces to `https://ingest.latitude.so/v1/traces` with `Authorization: Bearer <LATITUDE_API_KEY>` and `X-Latitude-Project: <LATITUDE_PROJECT_SLUG>`. For full model/token/message details, ensure LLM spans follow OpenTelemetry GenAI semantic conventions (`gen_ai.*` attributes).
-- **Coding-agent / harness telemetry (Claude Code, OpenClaw, Pi, Hermes, …):** this is separate from app SDK instrumentation — it traces an *agent harness's own* prompts/responses/tool I/O, not the target app's LLM calls. Keep the two separate, and **ask before installing** any hook/plugin, since prompts, responses, and tool I/O can be sent to Latitude. Offer `--no-content` (structural-only: timing, tokens, model/tool names, no content) where the integration supports it. New harnesses are added over time — check the docs (`https://docs.latitude.so`, `telemetry/*`) or `packages/telemetry/*` for the current set and exact flags. At time of writing:
-  - **Claude Code:** `npx -y @latitude-data/claude-code-telemetry install` (full-content only).
-  - **OpenClaw:** `npx -y @latitude-data/openclaw-telemetry-cli install` (supports `--no-content`).
-  - **Pi:** `npx -y @latitude-data/pi-telemetry install` (supports `--no-content`).
-  - **Hermes** (Nous Research's Python harness): `pip install latitude-telemetry-hermes` into the *same* Python that runs Hermes, then enable it by adding `latitude` to `plugins.enabled` in `~/.hermes/config.yaml` (not via `hermes plugins enable`).
+- **Generic OTLP / other languages:** send traces to `https://ingest.latitude.so/v1/traces` with `Authorization: Bearer <LATITUDE_API_KEY>` and `X-Latitude-Project: <LATITUDE_PROJECT_SLUG>` (`application/json` or `application/x-protobuf`; a `202` means accepted). With the SDK-agnostic env vars that is `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` plus `OTEL_EXPORTER_OTLP_TRACES_HEADERS`; some frameworks (Pydantic AI, Strands) take the **base** URL `https://ingest.latitude.so` in `OTEL_EXPORTER_OTLP_ENDPOINT` and append the path themselves. For full model/token/message details, LLM spans must follow OpenTelemetry GenAI semantic conventions (`gen_ai.*` attributes); the `otel-exporter` docs page has curl, Go, Java, Ruby and .NET examples and the optional `latitude.*`, `session.id`, `user.id` attributes.
+- **Coding-agent / harness telemetry:** this traces an *agent harness's own* prompts, responses and tool I/O, not an app's LLM calls. Keep the two separate, and **ask before installing** any hook or plugin, since content is sent to Latitude; offer the structural-only mode where one exists. Each harness reads the key and project from its own place, so follow its docs page (`telemetry/<name>`), not `.env` conventions. New harnesses are added over time; at time of writing:
+  - **Claude Code:** `npx -y @latitude-data/claude-code-telemetry@latest install` (non-interactive: `--api-key=… --project=<slug> --yes`). Writes an `env` block and Stop/SessionEnd hooks into `~/.claude/settings.json`; reads `LATITUDE_PROJECT` only. Full content only; redact with `LATITUDE_REDACT_ATTRIBUTES`.
+  - **Hermes:** install `latitude-telemetry-hermes` into the Python that runs Hermes (official installer: `~/.hermes/bin/uv pip install --python ~/.hermes/hermes-agent/venv/bin/python latitude-telemetry-hermes`). Enable by adding `latitude` to `plugins.enabled` in `~/.hermes/config.yaml` (not `hermes plugins enable`) and set `plugins.stream_reasoning_deltas: true` for time-to-first-token. Credentials go in `~/.hermes/.env` as `LATITUDE_API_KEY` and `LATITUDE_PROJECT` (or `LATITUDE_PROJECT_SLUG`). Structural-only: `LATITUDE_NO_CONTENT=true`. Restart Hermes (and its gateway) afterwards.
+  - **OpenClaw:** use OpenClaw's bundled `@openclaw/diagnostics-otel` plugin (`openclaw plugins install clawhub:@openclaw/diagnostics-otel`) and configure `diagnostics.otel` in `~/.openclaw/openclaw.json` with `tracesEndpoint: https://ingest.latitude.so/v1/traces` (must be `https`), the `Authorization` and `X-Latitude-Project` headers and `captureContent`; `openclaw gateway restart`. Structural-only: `captureContent.enabled: false`. The older `@latitude-data/openclaw-telemetry` package is the migration source, not the recommendation.
+  - **Pi:** `npx -y @latitude-data/pi-telemetry install` (non-interactive: `--api-key=… --project=<slug> --yes`; structural-only: `--no-content`). Writes `~/.pi/agent/settings.json` and `~/.pi/agent/latitude-telemetry.json`; reads `LATITUDE_PROJECT` or `LATITUDE_PROJECT_SLUG`.
+  - **Prime Intellect (Verifiers):** `pip install latitude-telemetry-prime-intellect` into the eval's environment, `LATITUDE_API_KEY` + `LATITUDE_PROJECT` (or `LATITUDE_PROJECT_SLUG`) in the env; export via `make_on_complete(...)` / `export_episodes(...)` or post-hoc with `latitude-prime-intellect-export export <run-dir>`. Rewards land as custom scores. Structural-only: `LATITUDE_NO_CONTENT=true`.
+- **Historical traces from another platform:** Langfuse, LangSmith and Braintrust history is not instrumented, it is **imported**: Project settings → Imports in the UI, or the `createImport` operation over the MCP, CLI or API (`getImport` / `retryImport` / `cancelImport` to follow it). Imports are cloud-only, newest-first, capped by plan usage, one at a time per organization; credentials are discarded when the import finishes. Docs: `telemetry/imports/overview`. Offer this when the audit finds an existing Langfuse/LangSmith/Braintrust setup the user wants to keep as history while switching live traffic to Latitude.
 
 ## Long-term memory? Add memory observability
 

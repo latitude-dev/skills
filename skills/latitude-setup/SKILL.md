@@ -1,11 +1,13 @@
 ---
 name: latitude-setup
-description: Zero-account onboarding orchestrator for Latitude. Bootstrap a temporary Latitude account from the terminal (no signup), instrument the app for tracing, verify real traces, clean up, hand back a browser link to claim ownership, and offer a first Artifact (HTML report) from the new traces. Use when someone wants to set up Latitude from scratch with no existing account or API key — the landing-page "try it with your agent" flow. If it turns out the user already has an account, API key, or connected Latitude MCP, this skill redirects to latitude-telemetry + latitude-cli instead of creating a temporary account.
+description: Zero-account onboarding orchestrator for Latitude. Bootstrap a temporary Latitude account from the terminal (no signup), instrument the app or agent harness (Claude Code, Hermes, OpenClaw, Pi, Prime Intellect) for tracing, verify real traces, clean up, hand back a browser link to claim ownership, and offer a first Artifact (HTML report) from the new traces. Use when someone wants to set up Latitude, install Latitude telemetry, or "try Latitude" and may have no account or API key yet — the landing-page "try it with your agent" flow. If it turns out the user already has an account, API key, or connected Latitude MCP, this skill redirects to latitude-telemetry + latitude-cli instead of creating a temporary account.
 ---
 
 # Latitude Setup (zero-account onboarding)
 
-Orchestrates the **from-scratch** path: the user has **no Latitude account and no API key**. This skill provisions a temporary account via the CLI, instruments the app, verifies real traces, and returns a claim link the user opens in a browser to take ownership.
+Orchestrates the **from-scratch** path: the user has **no Latitude account and no API key**. This skill provisions a temporary account via the CLI, instruments the target, verifies real traces, and returns a claim link the user opens in a browser to take ownership.
+
+The **target** is whatever should emit traces: an **app** (instrumented with the Latitude SDKs or an OTLP exporter) or an **agent harness** the user runs locally (Claude Code, Hermes, OpenClaw, Pi, Prime Intellect, each with its own plugin). Everything below applies to both; the steps call out where a harness differs.
 
 This skill depends on two others — **`latitude-cli`** (install + auth + command primitives) and **`latitude-telemetry`** (instrumentation). Read both; this skill only adds the orchestration between them. The optional last step hands off to **`latitude-artifacts`** (an HTML report from the traces you just verified); install it if it is missing (one command, see step 9).
 
@@ -16,6 +18,7 @@ The temporary-account bootstrap exists to make onboarding automatic for someone 
 - **An API key is already present** — `LATITUDE_API_KEY` set in the shell, in a `.env` (search the app root and its parents), in the app's secret manager, or in deployment/CI config.
 - **A Latitude MCP is connected and authenticated** in this harness — an OAuth-authorized Latitude MCP means the user already has a workspace.
 - **Existing Latitude config/instrumentation in the repo** — a `LATITUDE_PROJECT_SLUG`, a `@latitude-data/telemetry` / `latitude-telemetry` dependency, or an OTLP exporter already pointed at `ingest.latitude.so`.
+- **A harness already wired to Latitude** — `LATITUDE_API_KEY` in `~/.hermes/.env`, a `LATITUDE_*` env block in `~/.claude/settings.json`, `~/.pi/agent/latitude-telemetry.json`, or a `diagnostics.otel` block in `~/.openclaw/openclaw.json` pointing at `ingest.latitude.so`.
 - **The user says so** — they mention being signed in, having a project, or already using Latitude.
 
 **If any of these hold → do NOT bootstrap.** The user has an account; redirect to the direct path:
@@ -42,7 +45,7 @@ Ensure the `latitude-telemetry` and `latitude-cli` skills are available, and ins
 
 ### 2. Bootstrap a temporary account
 
-This is unauthenticated — no key needed yet. Infer a sensible project name from the app (and optionally an org name); ask the user for an email only if you want the claim link mailed to them.
+This is unauthenticated — no key needed yet. Infer a sensible project name from the app or harness (for a harness, its name works: "hermes", "claude-code") and optionally an org name; ask the user for an email only if you want the claim link mailed to them.
 
 **First, discover the command's exact flags and response fields** — don't assume the shape; it can change across versions:
 
@@ -88,6 +91,8 @@ If any value you later add to `.env` contains spaces (not the key/slug — e.g. 
 
 `LATITUDE_API_KEY` authenticates **both** the `latitude` CLI (it auto-loads `.env` from the working directory and its parents) **and** the telemetry SDK — one entry, both consumers. **Do not** run `latitude auth login`; it invokes the OS keychain and can block on a prompt. Run subsequent `latitude` commands from the app root so `.env` is picked up. Do not echo the key back to the user.
 
+**Harness target:** the harness does not read the app's `.env`. Copy the two values (never echoed, same `jq` pattern) to wherever that harness reads them, per its docs page: Hermes takes `LATITUDE_API_KEY` and `LATITUDE_PROJECT` in `~/.hermes/.env`; Claude Code and Pi take them as installer flags (`--api-key`, `--project`); OpenClaw takes them as headers in `~/.openclaw/openclaw.json`. Keep the `.env` in the working directory as well, so the `latitude` CLI commands in steps 6 and 7 authenticate. `LATITUDE_PROJECT` and `LATITUDE_PROJECT_SLUG` name the same slug; use the spelling the harness documents.
+
 **Verify auth before going further** (this catches the most common failure early):
 
 ```bash
@@ -100,11 +105,15 @@ If it shows `missing`, `.env` isn't being applied — you're either not running 
 
 Hand off to `latitude-telemetry` to add instrumentation, pointing it at `LATITUDE_PROJECT_SLUG=<projectSlug>`. The key/slug are already provisioned and in `.env`, so **skip that skill's MCP-config discovery detour** — you have the values. Follow its audit → group → clarify → **plan → wait for approval** → implement steps. Do not edit code before the user approves the plan.
 
+**Harness target:** use that skill's "Coding-agent / harness telemetry" entry instead of the app workflow: install the harness plugin the way its docs page says, ask before installing (the harness's prompts, responses and tool I/O will be sent to Latitude) and offer the structural-only mode where one exists. There is no app code to plan; the approval is for the plugin install and the config edits.
+
 `latitude-telemetry`'s workflow ends with its own "verify real traces land" step. In this orchestration that verification loop is steps 5–6 below — and step 7 then extends it with the temporary-account cleanup — so drive the trace-checking from here rather than verifying twice.
 
 ### 5. Run the user's real LLM flow
 
 After instrumentation, run the user's **actual** code so real spans are emitted — not a synthetic span. Spans typically export on a batch interval, so they may take a short while to arrive — poll rather than expecting them instantly (step 6). Let the process finish or shut down **gracefully** so buffered spans flush; a hard kill can drop them. For short-lived scripts, ensure the SDK flushes before exit (see `latitude-telemetry`).
+
+**Harness target:** restart the harness so it loads the plugin, then run one real session through it (a short prompt that triggers at least one tool call) and let the session end normally so the plugin flushes.
 
 ### 6. Inspect real traces and iterate
 
@@ -131,7 +140,7 @@ A successful `projects delete` returns HTTP 204 (no body), which the CLI renders
 
 Present the claim link to the user (safe to show) and tell them to open it in a browser to claim ownership of the temporary account — that makes them the owner and stops it from expiring. Mention its expiry (unclaimed temp accounts are deleted then). If you passed an email, note the link was also sent there.
 
-Do **not** print the API key. The final state: instrumented app, one clean project of verified real traces, and a working claim link — with the user never having touched the Latitude UI first.
+Do **not** print the API key. The final state: instrumented app or harness, one clean project of verified real traces, and a working claim link — with the user never having touched the Latitude UI first.
 
 ### 9. Offer a first artifact
 
