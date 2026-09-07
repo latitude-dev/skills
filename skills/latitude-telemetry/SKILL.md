@@ -30,7 +30,7 @@ For an app that already produces spans, the OTLP-redirect path is the lower-risk
 1. **Audit first**
    - Identify languages, package managers, entry points, runtimes, deployment config, and env conventions.
    - Check the package registry for the latest Latitude SDK for the target language; use the current alpha if it is the latest release, and do not copy versions from examples.
-   - Check for `LATITUDE_API_KEY` and either `LATITUDE_PROJECT_SLUG` or per-capture project routing. Look in env files, secret-manager references, deployment config, and CI. If missing, direct the user to add real values in the existing secret/config system; add placeholders only to examples/docs. If there is **no Latitude account or key at all** and the user wants to start from scratch, defer to the `latitude-setup` skill to provision one first (see "No account yet?" below).
+   - Check for `LATITUDE_API_KEY` and either `LATITUDE_PROJECT_SLUG` or per-capture project routing. Look in env files, secret-manager references, deployment config, CI, and the harness's own config for harness targets. **If the key is missing, do not ask the user for it.** A missing key means one of two things, and only the user knows which: they have an account and can hand you the key, or they have no account and `latitude-setup` should create a temporary one right now (no signup, claim later). Ask that as one question with the temporary account as the default (see "No account yet?" below), then continue. A project slug, an enabled plugin or a dependency without a key next to it is a placeholder or a leftover, not evidence of an account.
    - Find existing telemetry: `@opentelemetry/*`, `opentelemetry-*`, `dd-trace`, `@sentry/*`, `sentry-sdk`, `newrelic`, Honeycomb, Jaeger/Tempo/OTLP exporters, LangSmith/Langfuse/Helicone/Phoenix/Traceloop, custom span processors, and `OTEL_*` env vars. **If the app already exports OTLP, prefer redirecting it over installing the SDK** (see "First decision" above). Otherwise existing SDKs usually initialize first; Latitude initializes second or attaches a `LatitudeSpanProcessor` to the existing provider.
    - Find LLM call sites: OpenAI chat/responses, Anthropic messages, Bedrock, Cohere, Together, Vertex/Google AI, Azure OpenAI, Vercel AI SDK `generateText`/`streamText`, LangChain, LlamaIndex, OpenAI Agents, LiteLLM, CrewAI, etc. Trace from route/job/CLI/agent entry points to the actual model calls. Note streaming paths; consume streams inside the capture boundary.
    - Note whether the app keeps **long-term memory** — state it persists and reloads across separate interactions (files, a database, a vector store, a key-value store, or a provider like Mem0/Zep/Supermemory), as distinct from within-request conversation history. If it does, memory observability is a strongly recommended add-on — see "Long-term memory?" below.
@@ -89,7 +89,15 @@ For an app that already produces spans, the OTLP-redirect path is the lower-risk
 
 ## No account yet? Zero-account CLI bootstrap
 
-If the app has no Latitude account or API key and the user wants to start from scratch, defer to the **`latitude-setup`** skill before instrumenting. It uses the `latitude` CLI to bootstrap a temporary account with no signup — returning an API key, one project slug, and a browser link to claim ownership — writes `LATITUDE_API_KEY` and `LATITUDE_PROJECT_SLUG` into `.env`, then returns here to instrument against that `projectSlug`.
+If no working `LATITUDE_API_KEY` exists anywhere, ask exactly one question and act on the answer; never end a turn by asking for the key:
+
+```text
+Do you already have a Latitude account?
+  (a) No, create a temporary one for me now, no signup, I'll claim it later   (default)
+  (b) Yes, I'll give you its API key and project slug
+```
+
+On (a), no answer, or "just do it", hand off to the **`latitude-setup`** skill before instrumenting. It uses the `latitude` CLI to bootstrap a temporary account with no signup — returning an API key, one project slug, and a browser link to claim ownership — writes `LATITUDE_API_KEY` and `LATITUDE_PROJECT_SLUG` into `.env` (or the harness's config), then returns here to instrument against that `projectSlug`, and it finishes with a first Artifact. On (b), wait for the values and continue with the direct path.
 
 The bootstrap `projectSlug` is **stable** across `latitude-setup`'s delete-and-recreate trace-cleanup step (same project name → same slug), so write `LATITUDE_PROJECT_SLUG` **once**; it never needs re-editing for cleanup.
 
@@ -110,7 +118,7 @@ Use this section when adding Latitude telemetry and configuration values are mis
 
 When asking the user to provide config, explain what each value is and where to find it:
 
-- `LATITUDE_API_KEY`: authenticates uploads to Latitude. Find or create it in Latitude under **Settings → API Keys**.
+- `LATITUDE_API_KEY`: authenticates uploads to Latitude. An existing account finds or creates it under **Settings → API Keys**; `latitude-setup` creates one for a new temporary account. Explain this only when the user chose to provide their own key; do not ask for it otherwise.
 - `LATITUDE_PROJECT_SLUG`: chooses which Latitude project receives traces. In the Latitude app, open the project; the slug appears in the sidebar title section. It is the short project identifier, not the display name.
 - Generic OTLP setups encode the same values as an OTLP **traces endpoint** of `https://ingest.latitude.so/v1/traces` plus **headers** `Authorization=Bearer <api-key>` and `X-Latitude-Project=<project-slug>`. Set them through whatever mechanism the app already uses — the variable names vary by app/framework (OTel's convention is `OTEL_EXPORTER_OTLP_[TRACES_]ENDPOINT` / `…_HEADERS`, but apps may use different names or configure the exporter in code), so match the app rather than assuming a fixed name.
 - **Quote any `.env` value that contains spaces.** The Latitude CLI reads `LATITUDE_API_KEY` from `.env` with a strict parser that **stops at the first unquoted spaced value** — so an unquoted header/token value (e.g. one containing `Bearer `) prevents the CLI from ever reading the key. Wrap such values in double quotes; the quotes are stripped by Node's `--env-file` and other loaders, so one quoted `.env` works everywhere. Details in `latitude-cli` → Authentication.
