@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Your first traced session in Latitude</title>
+    <link rel="preconnect" href="https://rsms.me/" />
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+<style>
+      /* Latitude design tokens (packages/ui/src/styles/globals.css). Keep the values; theme by toggling html.dark. */
+      :root {
+        --background: 0 0% 100%;
+        --foreground: 224 71.5% 4%;
+        --card: 0 0% 100%;
+        --card-foreground: 223 70% 4%;
+        --popover: 0 0% 100%;
+        --muted: 220 14% 96%;
+        --muted-foreground: 211 11% 45%;
+        --border: 0 0% 89.8%;
+        --primary: 210 100% 50%;
+        --primary-foreground: 210 20% 98%;
+        --primary-muted: 210 100% 96%;
+        --accent: 210 100% 97%;
+        --accent-foreground: 211 97% 35%;
+        --destructive: 0 72% 51%;
+        --destructive-muted: 0 93% 94%;
+        --destructive-muted-foreground: 0 74% 42%;
+        --success: 142 72% 29%;
+        --success-muted: 141 84% 93%;
+        --success-muted-foreground: 142 72% 29%;
+        --warning-muted: 48 96% 89%;
+        --warning-muted-foreground: 26 90% 37%;
+        --background-code: 0 0% 98%;
+        --radius: 0.5rem;
+        --shadow-card: 0px 1px 3px 0px hsl(0 0% 0% / 0.1), 0px 1px 2px -1px hsl(0 0% 0% / 0.1);
+        --series-1: oklch(70.7% 0.165 254.624);
+        --series-2: oklch(70.2% 0.183 293.541);
+        --series-3: oklch(74% 0.238 322.16);
+        --series-4: oklch(77.7% 0.152 181.912);
+        --series-5: oklch(82.8% 0.189 84.429);
+        --series-6: oklch(70.4% 0.191 22.216);
+        --series-7: oklch(74.6% 0.16 232.661);
+        --series-8: oklch(84.1% 0.238 128.85);
+        --series-positive: oklch(79.2% 0.209 151.711);
+        --series-negative: oklch(70.4% 0.191 22.216);
+        --series-other: oklch(70.7% 0.022 261.325);
+      }
+      html.dark {
+        --background: 0 0% 7%;
+        --foreground: 0 0% 98%;
+        --card: 0 0% 3.9%;
+        --card-foreground: 0 0% 98%;
+        --popover: 0 0% 13%;
+        --muted: 0 0% 14.9%;
+        --muted-foreground: 0 0% 63.9%;
+        --border: 231 9% 12.9%;
+        --primary: 211 94% 43%;
+        --primary-foreground: 210 20% 98%;
+        --primary-muted: 210 100% 12%;
+        --accent: 211 88% 10%;
+        --accent-foreground: 211 94% 65%;
+        --destructive: 0 72% 51%;
+        --destructive-muted: 0 75% 15%;
+        --destructive-muted-foreground: 0 75% 56%;
+        --success: 142 76% 36%;
+        --success-muted: 141 84% 10%;
+        --success-muted-foreground: 142 76% 36%;
+        --warning-muted: 48 100% 10%;
+        --warning-muted-foreground: 49 100% 36%;
+        --background-code: 0 0% 11%;
+        --shadow-card: 0px 2px 4px 0px hsl(0 0% 100% / 0.06), 0px 1px 3px -1px hsl(0 0% 100% / 0.04);
+        --series-1: oklch(54.6% 0.245 262.881);
+        --series-2: oklch(54.1% 0.281 293.009);
+        --series-3: oklch(59.1% 0.293 322.896);
+        --series-4: oklch(60% 0.118 184.704);
+        --series-5: oklch(66.6% 0.179 58.318);
+        --series-6: oklch(57.7% 0.245 27.325);
+        --series-7: oklch(58.8% 0.158 241.966);
+        --series-8: oklch(64.8% 0.2 131.684);
+        --series-positive: oklch(62.7% 0.194 149.214);
+        --series-negative: oklch(57.7% 0.245 27.325);
+        --series-other: oklch(44.6% 0.03 256.802);
+      }
+
+      * { box-sizing: border-box; border-color: hsl(var(--border)); }
+      html { font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; font-feature-settings: "rlig" 1, "calt" 1; }
+      body { margin: 0; background: hsl(var(--background)); color: hsl(var(--foreground)); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+      code, .mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.9em; }
+      a { color: hsl(var(--accent-foreground)); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      .page { max-width: 1200px; margin: 0 auto; padding: 32px 24px 64px; }
+      .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+      .header h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 4px; }
+      .header .subtitle { color: hsl(var(--muted-foreground)); margin: 0; }
+      .meta { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 10px; color: hsl(var(--muted-foreground)); font-size: 12px; }
+      .meta b { color: hsl(var(--foreground)); font-weight: 500; }
+
+      .theme-toggle { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) - 2px); background: hsl(var(--card)); color: hsl(var(--foreground)); font: inherit; font-size: 12px; cursor: pointer; }
+      .theme-toggle:hover { background: hsl(var(--muted)); }
+
+      .section { margin-top: 32px; }
+      .section > h2 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+      .section > p.lead { margin: 0 0 16px; color: hsl(var(--muted-foreground)); }
+
+      .grid { display: grid; gap: 16px; grid-template-columns: repeat(12, minmax(0, 1fr)); }
+      .col-3 { grid-column: span 3; } .col-4 { grid-column: span 4; } .col-6 { grid-column: span 6; } .col-8 { grid-column: span 8; } .col-12 { grid-column: span 12; }
+      @media (max-width: 900px) { .col-3, .col-4 { grid-column: span 6; } .col-8 { grid-column: span 12; } }
+      @media (max-width: 600px) { .col-3, .col-4, .col-6 { grid-column: span 12; } }
+
+      .card { background: hsl(var(--card)); color: hsl(var(--card-foreground)); border: 1px solid hsl(var(--border)); border-radius: var(--radius); box-shadow: var(--shadow-card); padding: 16px; min-width: 0; }
+      .card > h3 { font-size: 13px; font-weight: 500; color: hsl(var(--muted-foreground)); margin: 0 0 12px; }
+
+      .kpi .value { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+      .kpi .delta { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+      .kpi .delta.good { background: hsl(var(--success-muted)); color: hsl(var(--success-muted-foreground)); }
+      .kpi .delta.bad { background: hsl(var(--destructive-muted)); color: hsl(var(--destructive-muted-foreground)); }
+      .kpi .delta.neutral { background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); }
+      .kpi .hint { margin-top: 6px; color: hsl(var(--muted-foreground)); font-size: 12px; }
+
+      .chart { height: 260px; width: 100%; }
+      .chart.tall { height: 340px; }
+
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid hsl(var(--border)); vertical-align: top; }
+      th { color: hsl(var(--muted-foreground)); font-weight: 500; font-size: 12px; }
+      td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      tr:last-child td { border-bottom: 0; }
+      .bar { position: relative; height: 6px; border-radius: 3px; background: hsl(var(--muted)); overflow: hidden; }
+      .bar > span { position: absolute; inset: 0 auto 0 0; background: var(--series-1); border-radius: 3px; }
+
+      .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; border: 1px solid transparent; }
+      .badge.ok { background: hsl(var(--success-muted)); color: hsl(var(--success-muted-foreground)); }
+      .badge.warn { background: hsl(var(--warning-muted)); color: hsl(var(--warning-muted-foreground)); }
+      .badge.error { background: hsl(var(--destructive-muted)); color: hsl(var(--destructive-muted-foreground)); }
+      .badge.info { background: hsl(var(--primary-muted)); color: hsl(var(--accent-foreground)); }
+
+      .callout { border: 1px solid hsl(var(--border)); border-left: 3px solid hsl(var(--primary)); border-radius: var(--radius); padding: 12px 16px; background: hsl(var(--accent)); }
+      .callout.warn { border-left-color: hsl(var(--warning-muted-foreground)); background: hsl(var(--warning-muted)); }
+      .callout.error { border-left-color: hsl(var(--destructive)); background: hsl(var(--destructive-muted)); }
+      .findings { margin: 0; padding-left: 18px; }
+      .findings li { margin: 6px 0; }
+      .findings li::marker { color: hsl(var(--muted-foreground)); }
+
+      .footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); font-size: 12px; }
+      .footer code { background: hsl(var(--background-code)); padding: 1px 5px; border-radius: 4px; }
+      .empty { color: hsl(var(--muted-foreground)); font-size: 13px; padding: 24px 0; text-align: center; }
+
+      @media print {
+        body { background: #fff; color: #000; }
+        .theme-toggle { display: none; }
+        .card { box-shadow: none; break-inside: avoid; }
+      }
+      .claim { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; border: 1px solid hsl(var(--primary) / 0.35); background: hsl(var(--primary-muted)); border-radius: var(--radius); padding: 16px 20px; margin-bottom: 24px; }
+      .claim h2 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+      .claim p { margin: 0; color: hsl(var(--muted-foreground)); font-size: 13px; }
+      .button { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: calc(var(--radius) - 2px); background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font-weight: 600; font-size: 14px; text-decoration: none; white-space: nowrap; box-shadow: var(--button-face-inset-shadow, inset 0 3px 8px 0 rgb(255 255 255 / 0.3)); }
+      .button:hover { text-decoration: none; filter: brightness(1.05); }
+      .button.secondary { background: hsl(var(--card)); color: hsl(var(--foreground)); border: 1px solid hsl(var(--border)); box-shadow: none; font-weight: 500; }
+      .timeline { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 3fr) 90px; gap: 6px 12px; align-items: center; font-size: 13px; }
+      .timeline .head { color: hsl(var(--muted-foreground)); font-size: 12px; font-weight: 500; padding-bottom: 4px; border-bottom: 1px solid hsl(var(--border)); }
+      .timeline .label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+      .timeline .label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .timeline .track { position: relative; height: 14px; background: hsl(var(--muted)); border-radius: 3px; overflow: hidden; }
+      .timeline .track > span { position: absolute; top: 0; bottom: 0; border-radius: 3px; min-width: 2px; }
+      .timeline .dur { text-align: right; font-variant-numeric: tabular-nums; color: hsl(var(--muted-foreground)); }
+      .kindtag { display: inline-block; flex: none; width: 52px; text-align: center; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+      .kindtag.llm { background: hsl(var(--primary-muted)); color: hsl(var(--accent-foreground)); }
+      .kindtag.tool { background: hsl(var(--success-muted)); color: hsl(var(--success-muted-foreground)); }
+      .kindtag.other, .kindtag.agent { background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); }
+      .kindtag.memory { background: hsl(var(--purple)); color: hsl(var(--purple-foreground)); }
+      .msg { border: 1px solid hsl(var(--border)); border-radius: var(--radius); padding: 10px 12px; margin-top: 10px; background: hsl(var(--background-code)); }
+      .msg .role { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); margin-bottom: 4px; }
+      .msg pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; line-height: 1.5; max-height: 320px; overflow: auto; }
+      .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; font-size: 13px; }
+      .kv dt { color: hsl(var(--muted-foreground)); }
+      .kv dd { margin: 0; font-variant-numeric: tabular-nums; word-break: break-all; }
+      .unlock { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+      .unlock .item { border: 1px solid hsl(var(--border)); border-radius: var(--radius); padding: 12px 14px; }
+      .unlock .item b { display: block; margin-bottom: 4px; }
+      .unlock .item p { margin: 0; color: hsl(var(--muted-foreground)); font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="header">
+        <div>
+          <h1 id="title">Your first traced session in Latitude</h1>
+          <p class="subtitle" id="subtitle"></p>
+          <div class="meta" id="meta"></div>
+        </div>
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle color theme"></button>
+      </header>
+
+      <main id="root"></main>
+
+      <footer class="footer" id="footer"></footer>
+    </div>
+
+    <!--
+      Data blob. Fill it with the values the Latitude CLI returned for the clean trace:
+        latitude traces get       --project-slug <slug> --trace-id <id> --format json   -> trace, conversation
+        latitude traces listSpans --project-slug <slug> --trace-id <id> --format json   -> spans
+        latitude traces getSpan   --project-slug <slug> --trace-id <id> --span-id <id> --format json -> tool calls, tool definitions, full messages
+        latitude traces getMemory --project-slug <slug> --trace-id <id> --format json   -> memory (omit or null when the app has no memory spans)
+      Paste wire values as they come: durations in nanoseconds, cost in microcents, times as ISO-8601. The page converts them.
+      Remove "claim" (or set it to null) when the account already existed. Keep the id and type attributes of this script tag.
+    -->
+    <script id="artifact-data" type="application/json">
+      {
+        "meta": {
+          "project": "hermes-agent",
+          "projectName": "Hermes Agent",
+          "projectUrl": "https://console.latitude.so/projects/hermes-agent",
+          "generatedAt": "2026-09-07T15:40:00Z",
+          "source": "latitude-telemetry-hermes 0.3.0",
+          "contentCaptured": true
+        },
+        "claim": {
+          "url": "https://console.latitude.so/claim/96bccbecad7776621b5dfde4fb4e6a1d07e479977535fd503b1fa2f26e945f33",
+          "expiresAt": "2026-09-14T15:32:00Z",
+          "emailedTo": null
+        },
+        "trace": {
+          "traceId": "219884ecdb4dcf162b83a321d3fc8717",
+          "url": "https://console.latitude.so/projects/hermes-agent?tab=traces&traceId=219884ecdb4dcf162b83a321d3fc8717",
+          "sessionId": "20260907_153241_9f1c2a",
+          "userId": null,
+          "rootSpanName": "hermes.turn",
+          "startTime": "2026-09-07T15:32:41.120Z",
+          "endTime": "2026-09-07T15:32:49.480Z",
+          "durationNs": 8360000000,
+          "timeToFirstTokenNs": 910000000,
+          "spanCount": 4,
+          "errorCount": 0,
+          "tokensInput": 2841,
+          "tokensOutput": 212,
+          "tokensCacheRead": 1900,
+          "tokensReasoning": 0,
+          "costTotalMicrocents": 1240000,
+          "models": ["gpt-5.6-luna"],
+          "providers": ["openai"],
+          "serviceNames": ["hermes-agent"],
+          "tags": ["hermes-default"]
+        },
+        "spans": [
+          { "spanId": "a1", "parentSpanId": null, "name": "hermes.turn", "operation": "invoke_agent", "startTime": "2026-09-07T15:32:41.120Z", "endTime": "2026-09-07T15:32:49.480Z", "statusCode": "ok" },
+          { "spanId": "b2", "parentSpanId": "a1", "name": "chat gpt-5.6-luna", "operation": "chat", "model": "gpt-5.6-luna", "provider": "openai", "startTime": "2026-09-07T15:32:41.300Z", "endTime": "2026-09-07T15:32:44.900Z", "statusCode": "ok", "tokensInput": 1420, "tokensOutput": 96, "costTotalMicrocents": 610000, "timeToFirstTokenNs": 910000000 },
+          { "spanId": "c3", "parentSpanId": "a1", "name": "terminal", "operation": "execute_tool", "toolName": "terminal", "startTime": "2026-09-07T15:32:44.950Z", "endTime": "2026-09-07T15:32:45.400Z", "statusCode": "ok" },
+          { "spanId": "d4", "parentSpanId": "a1", "name": "chat gpt-5.6-luna", "operation": "chat", "model": "gpt-5.6-luna", "provider": "openai", "startTime": "2026-09-07T15:32:45.450Z", "endTime": "2026-09-07T15:32:49.400Z", "statusCode": "ok", "tokensInput": 1421, "tokensOutput": 116, "costTotalMicrocents": 630000, "timeToFirstTokenNs": 780000000 }
+        ],
+        "conversation": {
+          "systemInstructions": "You are Hermes, a terminal-native agent. Prefer tools over guessing. Keep answers short.",
+          "input": [
+            { "role": "user", "content": "Latitude telemetry verification: use the terminal tool to run printf latitude-telemetry-ok, then respond with that exact output." }
+          ],
+          "output": [
+            { "role": "assistant", "content": "latitude-telemetry-ok" }
+          ]
+        },
+        "tools": {
+          "offered": [
+            { "name": "terminal", "description": "Run a shell command and return its output." },
+            { "name": "read_file", "description": "Read a file from the workspace." },
+            { "name": "web_search", "description": "Search the web." }
+          ],
+          "calls": [
+            { "name": "terminal", "input": "{\"command\": \"printf latitude-telemetry-ok\"}", "output": "latitude-telemetry-ok", "durationNs": 450000000, "statusCode": "ok" }
+          ]
+        },
+        "memory": null,
+        "notes": [
+          "One turn, two model calls around one tool call: the agent asked the model, ran the terminal tool, then asked the model to phrase the answer.",
+          "1,900 of 2,841 input tokens were served from the provider cache, which is why the second call cost about the same as the first despite a longer context."
+        ]
+      }
+    </script>
+
+    <script>
+      // ---------- Theme ----------
+      const root = document.documentElement
+      const THEME_KEY = "latitude-artifact-theme"
+      function applyTheme(theme) {
+        root.classList.toggle("dark", theme === "dark")
+        const button = document.getElementById("theme-toggle")
+        if (button) button.textContent = theme === "dark" ? "☾ Dark" : "☀ Light"
+      }
+      ;(function initTheme() {
+        const stored = localStorage.getItem(THEME_KEY)
+        const preferred = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+        applyTheme(stored || preferred)
+      })()
+      document.getElementById("theme-toggle").addEventListener("click", () => {
+        const next = root.classList.contains("dark") ? "light" : "dark"
+        localStorage.setItem(THEME_KEY, next)
+        applyTheme(next)
+      })
+
+      // ---------- Formatting (wire units in, human units out) ----------
+      const fmt = {
+        ns: (ns) => {
+          if (ns == null) return "—"
+          const s = ns / 1e9
+          return s >= 60 ? `${(s / 60).toFixed(1)}m` : s >= 1 ? `${s.toFixed(2)}s` : `${Math.round(s * 1000)}ms`
+        },
+        microcents: (mc) => {
+          if (mc == null) return "—"
+          const d = mc / 100_000_000
+          return d === 0 ? "$0" : d >= 1 ? `$${d.toFixed(2)}` : `$${d.toFixed(4)}`
+        },
+        int: (n) => (n == null ? "—" : Number(n).toLocaleString("en-US")),
+        datetime: (iso) => (iso ? `${new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" })} UTC` : "—"),
+        date: (iso) => (iso ? new Date(iso).toLocaleString("en-US", { month: "long", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" }) + " UTC" : "—"),
+      }
+      function esc(value) {
+        return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c])
+      }
+      function clip(text, max = 1500) {
+        const s = typeof text === "string" ? text : JSON.stringify(text, null, 2)
+        return s.length > max ? `${s.slice(0, max)}\n… (${s.length - max} more characters, open the trace in Latitude for the full content)` : s
+      }
+      function spanKind(span) {
+        const op = span.operation || ""
+        if (op === "execute_tool" || span.toolName) return "tool"
+        if (["chat", "text_completion", "generate_content", "embeddings"].includes(op)) return "llm"
+        if (op.includes("memory")) return "memory"
+        if (op === "invoke_agent") return "agent"
+        return "other"
+      }
+
+      // ---------- Blocks ----------
+      function kpi(label, value, hint) {
+        return `<div class="card kpi col-3"><h3>${esc(label)}</h3><div class="value">${esc(value)}</div>${hint ? `<div class="hint">${esc(hint)}</div>` : ""}</div>`
+      }
+      function section(title, lead, inner) {
+        if (!inner) return ""
+        return `<section class="section"><h2>${esc(title)}</h2>${lead ? `<p class="lead">${esc(lead)}</p>` : ""}<div class="grid">${inner}</div></section>`
+      }
+      function card(title, inner, span = "col-12") {
+        return `<div class="card ${span}">${title ? `<h3>${esc(title)}</h3>` : ""}${inner}</div>`
+      }
+
+      function claimBanner(claim) {
+        if (!claim || !claim.url) return ""
+        return `<div class="claim"><div><h2>This workspace is temporary. Claim it to keep it.</h2><p>Claiming makes you the owner of the organization and project behind this report. Unclaimed workspaces are deleted ${claim.expiresAt ? `on ${esc(fmt.date(claim.expiresAt))}` : "after a few days"}.${claim.emailedTo ? ` The link was also emailed to ${esc(claim.emailedTo)}.` : ""}</p></div><a class="button" href="${esc(claim.url)}" target="_blank" rel="noopener">Claim your workspace →</a></div>`
+      }
+
+      function timeline(trace, spans) {
+        if (!spans || !spans.length) return ""
+        const t0 = new Date(trace.startTime).getTime()
+        const total = Math.max(1, new Date(trace.endTime).getTime() - t0)
+        const rows = [...spans]
+          .sort((a, b) => new Date(a.startTime) - new Date(b.startTime))
+          .map((span) => {
+            const start = new Date(span.startTime).getTime() - t0
+            const dur = Math.max(1, new Date(span.endTime).getTime() - new Date(span.startTime).getTime())
+            const kind = spanKind(span)
+            const color = kind === "llm" ? "var(--series-1)" : kind === "tool" ? "var(--series-positive)" : kind === "memory" ? "var(--series-2)" : "var(--series-other)"
+            const label = span.model || span.toolName || span.name
+            const bad = span.statusCode === "error"
+            return `<div class="label"><span class="kindtag ${kind}">${kind}</span><span title="${esc(span.name)}">${esc(label)}</span>${bad ? '<span class="badge error">error</span>' : ""}</div><div class="track"><span style="left:${(start / total) * 100}%;width:${(dur / total) * 100}%;background:${bad ? "var(--series-negative)" : color}"></span></div><div class="dur">${fmt.ns(dur * 1e6)}</div>`
+          })
+          .join("")
+        return `<div class="timeline"><div class="head">Span</div><div class="head">Timeline (${fmt.ns(trace.durationNs)} total)</div><div class="head" style="text-align:right">Duration</div>${rows}</div>`
+      }
+
+      function message(role, content) {
+        return `<div class="msg"><div class="role">${esc(role)}</div><pre>${esc(clip(content))}</pre></div>`
+      }
+      function conversationBlock(conv, captured) {
+        if (!captured) return card("The conversation", '<div class="empty">Content capture is off for this setup, so prompts, responses and tool payloads stay on your machine. Latitude still records timing, tokens, cost, models and tool names. Turn content on when you want to read the conversations behind the numbers.</div>')
+        if (!conv) return ""
+        const parts = []
+        if (conv.systemInstructions) parts.push(message("system", conv.systemInstructions))
+        for (const m of conv.input || []) parts.push(message(m.role || "user", m.content))
+        for (const m of conv.output || []) parts.push(message(m.role || "assistant", m.content))
+        return card("The conversation, as the model saw it", parts.join("") || '<div class="empty">No messages on this trace.</div>')
+      }
+
+      function toolsBlock(tools, captured) {
+        if (!tools) return ""
+        const offered = (tools.offered || []).map((t) => `<tr><td><code>${esc(t.name)}</code></td><td>${esc(t.description || "")}</td></tr>`).join("")
+        const calls = (tools.calls || [])
+          .map((c) => `<div class="msg"><div class="role">${esc(c.name)} · ${fmt.ns(c.durationNs)} · <span class="badge ${c.statusCode === "error" ? "error" : "ok"}">${esc(c.statusCode || "ok")}</span></div>${captured ? `<pre>→ ${esc(clip(c.input, 600))}\n← ${esc(clip(c.output, 600))}</pre>` : '<pre>payloads not captured</pre>'}</div>`)
+          .join("")
+        const offeredCard = offered ? card(`Tools offered to the model (${(tools.offered || []).length})`, `<table><thead><tr><th>Tool</th><th>Description</th></tr></thead><tbody>${offered}</tbody></table>`, "col-6") : ""
+        const callsCard = card(`Tool calls (${(tools.calls || []).length})`, calls || '<div class="empty">The model did not call a tool in this session.</div>', offered ? "col-6" : "col-12")
+        return offeredCard + callsCard
+      }
+
+      function memoryBlock(memory) {
+        if (!memory || !memory.records || !memory.records.length) return ""
+        const rows = memory.records.map((r) => `<tr><td><code>${esc(r.recordId || r.id || "")}</code></td><td class="num">${fmt.int(r.readTokens ?? r.tokensRead)}</td><td class="num">${fmt.int(r.addedTokens ?? r.tokensAdded)}</td><td class="num">${fmt.int(r.removedTokens ?? r.tokensRemoved)}</td></tr>`).join("")
+        return card("Memory touched in this session", `<table><thead><tr><th>Record</th><th class="num">Read</th><th class="num">Added</th><th class="num">Removed</th></tr></thead><tbody>${rows}</tbody></table>`)
+      }
+
+      function identityBlock(trace, meta) {
+        const items = [
+          ["Project", `<a href="${esc(meta.projectUrl)}" target="_blank" rel="noopener">${esc(meta.projectName || meta.project)}</a>`],
+          ["Trace", `<a href="${esc(trace.url)}" target="_blank" rel="noopener"><code>${esc(trace.traceId)}</code></a>`],
+          ["Session", trace.sessionId ? `<code>${esc(trace.sessionId)}</code>` : "not set (add a session id to group turns into conversations)"],
+          ["User", trace.userId ? `<code>${esc(trace.userId)}</code>` : "not set (add a user id to see per-user usage and cost)"],
+          ["Root span", `<code>${esc(trace.rootSpanName || "")}</code>`],
+          ["Started", esc(fmt.datetime(trace.startTime))],
+          ["Models", (trace.models || []).map((m) => `<code>${esc(m)}</code>`).join(", ") || "—"],
+          ["Providers", (trace.providers || []).join(", ") || "—"],
+          ["Service", (trace.serviceNames || []).join(", ") || "—"],
+          ["Tags", (trace.tags || []).map((t) => `<span class="badge info">${esc(t)}</span>`).join(" ") || "none"],
+        ]
+        return card("Identity and grouping", `<dl class="kv">${items.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl>`, "col-6")
+      }
+
+      function tokensBlock(trace) {
+        const items = [
+          ["Input tokens", fmt.int(trace.tokensInput)],
+          ["Output tokens", fmt.int(trace.tokensOutput)],
+          ["Cache-read tokens", fmt.int(trace.tokensCacheRead)],
+          ["Reasoning tokens", fmt.int(trace.tokensReasoning)],
+          ["Estimated cost", fmt.microcents(trace.costTotalMicrocents)],
+          ["Time to first token", fmt.ns(trace.timeToFirstTokenNs)],
+          ["Total duration", fmt.ns(trace.durationNs)],
+          ["Spans with errors", `${fmt.int(trace.errorCount)} of ${fmt.int(trace.spanCount)}`],
+        ]
+        return card("Usage and cost", `<dl class="kv">${items.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>`, "col-6")
+      }
+
+      function unlocks(meta) {
+        const docs = "https://docs.latitude.so"
+        const items = [
+          ["Sessions and users", "Every turn with the same session id becomes one conversation; add a user id and Latitude shows usage, cost and behaviour per user.", `${docs}/observability/sessions`],
+          ["Tools", "Which tools are offered, which get called, how often they fail and why, and what they are called with.", `${docs}/observability/tools`],
+          ["Signals", "Latitude reads conversations and surfaces recurring problems (refusals, loops, tool failures, frustration) as signals you can monitor.", `${docs}/signals/overview`],
+          ["Cost and latency", "Spend and p95 latency by model, provider and tool, over any window.", `${docs}/observability/features/token-cost-tracking`],
+          ["Memory", "If the agent keeps long-term memory, Latitude shows each store, what changed and what gets retrieved.", `${docs}/observability/memory`],
+          ["Artifacts", "Ask your agent for a report or a dashboard on any of this data, built through the MCP, CLI or API.", `${docs}/more/artifacts`],
+        ]
+        return card("What this unlocks as traffic grows", `<div class="unlock">${items.map(([t, d, href]) => `<div class="item"><b><a href="${href}" target="_blank" rel="noopener">${esc(t)}</a></b><p>${esc(d)}</p></div>`).join("")}</div>`)
+      }
+
+      // ---------- Compose ----------
+      const DATA = JSON.parse(document.getElementById("artifact-data").textContent)
+
+      function render() {
+        const { meta, claim, trace, spans, conversation, tools, memory, notes } = DATA
+        const llmCalls = (spans || []).filter((s) => spanKind(s) === "llm").length
+        const toolCalls = (spans || []).filter((s) => spanKind(s) === "tool").length
+        document.getElementById("subtitle").textContent = `What Latitude captured from the first real ${meta.source ? `run through ${meta.source}` : "run"}. One session, every model call and tool call inside it.`
+        document.getElementById("meta").innerHTML = [`Project <b>${esc(meta.projectName || meta.project)}</b>`, `Captured <b>${esc(fmt.datetime(trace.startTime))}</b>`, `Report generated <b>${esc(fmt.datetime(meta.generatedAt))}</b>`].join("<span aria-hidden='true'>·</span>")
+        document.getElementById("root").innerHTML = [
+          claimBanner(claim),
+          section("At a glance", null,
+            kpi("Model calls", fmt.int(llmCalls), (trace.models || []).join(", ")) +
+            kpi("Tool calls", fmt.int(toolCalls), (tools && tools.offered ? `${tools.offered.length} tools offered` : "")) +
+            kpi("Tokens", `${fmt.int((trace.tokensInput || 0) + (trace.tokensOutput || 0))}`, `${fmt.int(trace.tokensInput)} in · ${fmt.int(trace.tokensOutput)} out`) +
+            kpi("Cost", fmt.microcents(trace.costTotalMicrocents), `${fmt.ns(trace.durationNs)} end to end · TTFT ${fmt.ns(trace.timeToFirstTokenNs)}`)),
+          section("What happened, in order", "Each bar is one span. Latitude keeps the parent/child structure, so nested tool calls and sub-agents show up under the turn that made them.", card(null, timeline(trace, spans))),
+          section("Details", null, identityBlock(trace, meta) + tokensBlock(trace)),
+          section("Content", meta.contentCaptured ? "Prompts, responses and tool payloads are captured, so you can read exactly what the model saw and did. Long values are clipped here; the trace in Latitude has everything." : null, conversationBlock(conversation, meta.contentCaptured) + toolsBlock(tools, meta.contentCaptured)),
+          section("Memory", null, memoryBlock(memory)),
+          section("Notes from your agent", null, notes && notes.length ? card(null, `<ul class="findings">${notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>`) : ""),
+          section("What comes next", null, unlocks(meta)),
+        ].join("")
+        document.getElementById("footer").innerHTML = `First-run baseline from a single session, not a trend. <a href="${esc(trace.url)}" target="_blank" rel="noopener">Open this trace in Latitude</a> · <a href="${esc(meta.projectUrl)}" target="_blank" rel="noopener">Open the project</a>. Durations from span timestamps, cost as estimated by Latitude.`
+      }
+      render()
+    </script>
+  </body>
+</html>
