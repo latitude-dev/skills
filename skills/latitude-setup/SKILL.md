@@ -27,7 +27,7 @@ The temporary-account bootstrap exists so that someone with **nothing set up yet
 
 **The only hard signals that an account exists:**
 
-- **A working API key is already present**: `LATITUDE_API_KEY` with a value in the shell, in a `.env` (search the app root and its parents), in the app's secret manager, in deployment/CI config, or in a harness's own config (`~/.hermes/.env`, the `LATITUDE_*` env block in `~/.claude/settings.json`, `~/.pi/agent/latitude-telemetry.json`, the `Authorization` header in the `diagnostics.otel` block of `~/.openclaw/openclaw.json`).
+- **A working API key is already present**: `LATITUDE_API_KEY` with a value in the shell, in a `.env` (search the app root and its parents), in the app's secret manager, in deployment/CI config, or in a harness's own config (`~/.hermes/.env`, the `LATITUDE_*` env block in `~/.claude/settings.json`, `~/.pi/agent/latitude-telemetry.json`, `plugins.entries["@latitude-data/openclaw-telemetry"].config.apiKey` in `~/.openclaw/openclaw.json`).
 - **A Latitude MCP is connected and authenticated** in this harness: an OAuth-authorized Latitude MCP means the user already has a workspace.
 - **The user says so**: they mention being signed in, having a project, or already using Latitude.
 
@@ -120,7 +120,7 @@ If any value you later add to `.env` contains spaces (not the key/slug; e.g. a h
 
 `LATITUDE_API_KEY` authenticates **both** the `latitude` CLI (it auto-loads `.env` from the working directory and its parents) **and** the telemetry SDK: one entry, both consumers. **Do not** run `latitude auth login`; it invokes the OS keychain and can block on a prompt. Run subsequent `latitude` commands from the app root so `.env` is picked up. Do not echo the key back to the user.
 
-**Harness target:** the harness does not read the app's `.env`. Copy the two values (never echoed, same `jq` pattern) to wherever that harness reads them, per its docs page: Hermes takes `LATITUDE_API_KEY` and `LATITUDE_PROJECT` in `~/.hermes/.env`; Claude Code and Pi take them as installer flags (`--api-key`, `--project`); OpenClaw takes them as headers in `~/.openclaw/openclaw.json`. Keep the `.env` in the working directory as well, so the `latitude` CLI commands in steps 6 to 9 authenticate. `LATITUDE_PROJECT` and `LATITUDE_PROJECT_SLUG` name the same slug; use the spelling the harness documents.
+**Harness target:** the harness does not read the app's `.env`. Copy the two values (never echoed, same `jq` pattern) to wherever that harness reads them, per its docs page: Hermes takes `LATITUDE_API_KEY` and `LATITUDE_PROJECT` in `~/.hermes/.env`; Claude Code, OpenClaw and Pi take them as installer flags (`--api-key`, `--project`). Keep the `.env` in the working directory as well, so the `latitude` CLI commands in steps 6 to 9 authenticate. `LATITUDE_PROJECT` and `LATITUDE_PROJECT_SLUG` name the same slug; use the spelling the harness documents.
 
 **Verify auth before going further** (this catches the most common failure early):
 
